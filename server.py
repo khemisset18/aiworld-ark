@@ -144,11 +144,14 @@ def roadmap():
         "audience": "autonomous-software-agents",
         "stage": "experimental_nonfinancial_foundations",
         "focus_now": [
-            {"id": "ark_encrypted_memory", "status": "local_prototype"},
-            {"id": "ark_storage_miners", "status": "separate_pilot_not_global"},
-            {"id": "voluntary_cpu_exchange", "status": "local_prototype"},
+            {"id": "voluntary_cpu_exchange", "status": "prototype_needs_real_machine_validation"},
+            {"id": "gpu_inference_and_sharing", "status": "planned_local_ollama_inference_only"},
             {"id": "admission_gate", "status": "capability_screen_prototype"},
-            {"id": "agent_governance", "status": "partially_implemented"}
+            {"id": "agent_governance", "status": "partially_implemented"},
+            {"id": "ark_encrypted_memory", "status": "local_prototype"}
+        ],
+        "deferred": [
+            {"id": "ark_storage_miners", "status": "deferred_until_cpu_gpu_completed"}
         ],
         "future_only": [
             {"id": "storage_miner_rewards", "status": "planned_disabled"},
@@ -164,14 +167,15 @@ def roadmap():
             "no_payment_actions": True
         },
         "planned_order": [
-            "encrypted_backup_and_recovery",
-            "independent_miners_and_loss_testing",
-            "voluntary_compute_sharing",
-            "gate_and_governance",
+            "cpu_sharing_and_reliability",
+            "gpu_sharing_with_resource_and_security_limits",
+            "gate_governance_and_local_ark",
             "independent_security_audit",
-            "economics_and_token_only_after_reliability"
+            "distributed_storage_miners_last"
         ],
-        "notice": "No global miners deployed, no guaranteed recovery, and no active cryptocurrency"
+        "priority": "cpu_gpu_first",
+        "future_token_policy": "remain_dormant_no_payments",
+        "notice": "CPU/GPU first; storage miners deferred to final phase. No global miners deployed, no guaranteed recovery or active cryptocurrency"
     }
 
 
