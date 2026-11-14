@@ -35,3 +35,9 @@ For a paid job at price P lamports:
 - The 20 SOL membership and 3% fee are **commercial terms**, not security or intelligence tests.
 
 **No Mainnet service is active or audited.**
+
+## Durcissement et demande de remboursement (14 novembre 2026)
+
+Les prêts gratuits restent gratuits. Les règlements directs de tâches payantes sont désormais **désactivés par défaut**, même sur Devnet : il faut un opt-in supplémentaire pour une démonstration sans séquestre. Une API signée `POST /v1/billing/refunds/request` permet de demander un remboursement d'adhésion sur Devnet et lie impérativement le remboursement à l'adresse du payeur initial. Le service ne signe pas de transfert et ne garantit pas l'accord juridique de remboursement : le transfert doit être approuvé et envoyé séparément par le titulaire de la trésorerie, puis vérifié sur Devnet via `POST /v1/billing/refunds/confirm`.
+
+**Un simulateur de séquestre ne sécurise pas les fonds réels.** Les paiements Mainnet, l'utilisation de séquestre et les remboursements automatiques restent désactivés. Voir [l'audit préparatoire et la liste des contrôles obligatoires](ESCROW_AND_REFUNDS_SECURITY.md).

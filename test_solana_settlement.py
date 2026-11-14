@@ -48,6 +48,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv('SOULCHAIN_DB', str(tmp_path / 'settle.sqlite3'))
     monkeypatch.setenv('ARK_ADMISSION_REQUIRED', '0')
     monkeypatch.setenv('ARK_BILLING_ENABLED', '1')
+    monkeypatch.setenv('ARK_DEVNET_DIRECT_PAYMENTS_EXPERIMENTAL', '1')
     monkeypatch.setenv('ARK_SOLANA_NETWORK', 'devnet')
     monkeypatch.delenv('ARK_PAYMENT_REQUIRED', raising=False)
     import server
@@ -103,6 +104,7 @@ def test_paid_compute_invoice_requires_provider_permission_and_exact_split(clien
 def test_cannot_collect_mainnet_real_sol(monkeypatch):
     monkeypatch.setenv('ARK_SOLANA_NETWORK', 'mainnet-beta')
     monkeypatch.setenv('ARK_BILLING_ENABLED', '1')
+    monkeypatch.setenv('ARK_DEVNET_DIRECT_PAYMENTS_EXPERIMENTAL', '1')
     assert not sol.billing_enabled()
     with pytest.raises(RuntimeError):
         sol.get_rpc_url()

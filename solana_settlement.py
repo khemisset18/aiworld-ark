@@ -75,58 +75,65 @@ def _transaction(signature: str) -> dict | None:
     return result.get("result")
 
 
-def verify_transfers(signature: str, *, memo: str, expected: dict[str, int],
-                     issued: int, expires: int) -> bool:
-    """Require finalized transaction, exact memo, same sender, exact SOL transfers.
+def verified_transfer_source(signature: str, *, memo: str, expected: dict[str, int],
+                             issued: int, expires: int,
+                             required_sender: str | None = None) -> str | None:
+    """Return the one original sender iff one finalized transaction matches exactly.
 
-    In particular: one transaction cannot be reused for multiple invoices.
-    That replay protection is enforced separately by the database's unique
-    payment_signatures table.
+    The source address is required for safe refunds to the *original payer*,
+    not a redirectable address supplied by the requester.
     """
     if not expected or len(expected) > 2:
-        return False
+        return None
     if any(not valid_address(a) or type(v) is not int or v <= 0
            for a, v in expected.items()):
-        return False
+        return None
+    if required_sender is not None and not valid_address(required_sender):
+        return None
     tx = _transaction(signature)
-    if not isinstance(tx, dict):
-        return False
-    meta = tx.get("meta") or {}
-    if meta.get("err", "missing") is not None:
-        return False
-    time = tx.get("blockTime")
-    if type(time) is not int or not issued <= time <= expires:
-        return False
-    message = (tx.get("transaction") or {}).get("message") or {}
-    if signature not in ((tx.get("transaction") or {}).get("signatures") or []):
-        return False
-    instructions = message.get("instructions") or []
+    if not isinstance(tx, dict) or (tx.get("meta") or {}).get("err", "missing") is not None:
+        return None
+    timestamp = tx.get("blockTime")
+    if type(timestamp) is not int or not issued <= timestamp <= expires:
+        return None
+    transaction = tx.get("transaction") or {}
+    if signature not in (transaction.get("signatures") or []):
+        return None
+    instructions = (transaction.get("message") or {}).get("instructions")
     if not isinstance(instructions, list):
-        return False
-    memos = []
-    transfers = {}
-    sources = set()
-    for ins in instructions:
-        if not isinstance(ins, dict):
-            continue
-        program = ins.get("program")
-        if program == "spl-memo" or ins.get("programId") == MEMO_PROGRAM:
-            parsed = ins.get("parsed")
+        return None
+    memos, transfers, sources = [], {}, set()
+    for instruction in instructions:
+        if not isinstance(instruction, dict):
+            return None
+        program = instruction.get("program")
+        if program == "spl-memo" or instruction.get("programId") == MEMO_PROGRAM:
+            parsed = instruction.get("parsed")
             if isinstance(parsed, dict):
                 parsed = parsed.get("memo")
             memos.append(parsed)
         if program == "system":
-            parsed = ins.get("parsed")
+            parsed = instruction.get("parsed")
             if not isinstance(parsed, dict) or parsed.get("type") != "transfer":
                 continue
             info = parsed.get("info") or {}
-            to_addr, sender, amount = info.get("destination"), info.get("source"), info.get("lamports")
-            if to_addr in expected:
+            destination, sender, amount = info.get("destination"), info.get("source"), info.get("lamports")
+            if destination in expected:
                 if not valid_address(sender) or type(amount) is not int or amount <= 0:
-                    return False
+                    return None
                 sources.add(sender)
-                transfers[to_addr] = transfers.get(to_addr, 0) + amount
-    return memos == [memo] and len(sources) == 1 and transfers == expected
+                transfers[destination] = transfers.get(destination, 0) + amount
+    if memos != [memo] or len(sources) != 1 or transfers != expected:
+        return None
+    source = next(iter(sources))
+    return source if required_sender is None or source == required_sender else None
+
+
+def verify_transfers(signature: str, *, memo: str, expected: dict[str, int],
+                     issued: int, expires: int) -> bool:
+    """Check amount, recipient, memo and finality; do not trust client receipts."""
+    return verified_transfer_source(signature, memo=memo, expected=expected,
+                                    issued=issued, expires=expires) is not None
 
 
 def payment_receipt_table(conn) -> None:
