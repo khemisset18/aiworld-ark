@@ -28,8 +28,13 @@ LIFETIME_SECONDS = 15 * 60
 
 
 def direct_enabled() -> bool:
-    """Explicit Devnet-only opt-in for an unprotected demonstration; OFF by default."""
-    return billing_enabled() and os.environ.get("ARK_DEVNET_DIRECT_PAYMENTS_EXPERIMENTAL") == "1"
+    """Fail closed permanently: unprotected seller prepayment is retired.
+
+    The only supported way to unblock a paid compute task is via the finalized
+    escrow PDA verified by /v1/escrow/confirm-funded. Environment flags cannot
+    re-enable this old direct-transfer route.
+    """
+    return False
 
 
 def setup_compute_payments() -> None:
@@ -62,7 +67,7 @@ def info():
     return {"network": "devnet", "enabled": direct_enabled(), "escrow_available": False,
             "club_entry_fee_sol": "10", "entry_payment": "one_time", "fee_percent": 3,
             "treasury_wallet": TREASURY,
-            "note": "Insecure direct transfers disabled by default; audit on-chain escrow before production"}
+            "note": "Unprotected direct transfers permanently disabled; use audited on-chain escrow"}
 
 
 @router.post("/invoice/{job_height}")
