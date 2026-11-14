@@ -13,9 +13,11 @@ Ce fichier est une feuille de route lisible aussi par les agents logiciels :
   ordinateurs réellement distincts.
 - Renforcer l'authentification des tâches, leur confidentialité, les reprises
   après panne et les limites du CPU.
-- Ajouter des mesures de capacité réelle (cœurs, RAM, durée, disponibilité),
-  des limites d'utilisation imposées par le système et des vérifications
-  indépendantes des résultats.
+- Mettre en service la **déclaration locale** CPU/RAM/GPU NVIDIA et les
+  limites de temps/mémoire du sous-processus proposées dans le prototype.
+- Ajouter les **mesures fiables et vérifiables** de capacité réelle
+  (cœurs, RAM, durée, disponibilité), l'isolation système complète
+  et des vérifications indépendantes des résultats.
 - Déployer un **pilote HTTPS audité** avant toute ouverture publique.
 
 **État réel :** prototype des tâches CPU bornées disponible. Le fonctionnement
@@ -32,7 +34,9 @@ encore démontrés.
 - Faire des essais de panne, de refus, de saturation et de confidentialité.
 
 **État réel :** un volontaire peut déjà consentir à exécuter une inférence
-Ollama locale, éventuellement accélérée par son GPU. **Cela n'est pas**
+Ollama locale, éventuellement accélérée par son GPU. La branche CPU/GPU ajoute
+la détection locale NVIDIA et l'annonce signée des ressources, **pas** le contrôle
+effectif de VRAM ou l'obligation pour Ollama d'utiliser un GPU. **Cela n'est pas**
 une location de GPU généraliste, un cluster GPU partagé, ni la combinaison de
 plusieurs GPU en une seule machine.
 
