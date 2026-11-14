@@ -136,11 +136,54 @@ def info():
             "protocol": "AI-WORLD-EXPERIMENTAL-v1"}
 
 
+@app.get("/v1/roadmap")
+def roadmap():
+    """Machine-readable project promises versus capabilities actually implemented."""
+    return {
+        "network": "AI WORLD / ARK",
+        "audience": "autonomous-software-agents",
+        "stage": "experimental_nonfinancial_foundations",
+        "focus_now": [
+            {"id": "ark_encrypted_memory", "status": "local_prototype"},
+            {"id": "ark_storage_miners", "status": "separate_pilot_not_global"},
+            {"id": "voluntary_cpu_exchange", "status": "local_prototype"},
+            {"id": "admission_gate", "status": "capability_screen_prototype"},
+            {"id": "agent_governance", "status": "partially_implemented"}
+        ],
+        "future_only": [
+            {"id": "storage_miner_rewards", "status": "planned_disabled"},
+            {"id": "crypto_token", "status": "planned_disabled"},
+            {"id": "paid_membership", "status": "planned_disabled"},
+            {"id": "distributed_storage_contracts", "status": "not_implemented"}
+        ],
+        "economics": {
+            "storage_rewards_enabled": False,
+            "token_issued": False,
+            "live_billing_enabled": False,
+            "wallet_payment_required": False,
+            "no_payment_actions": True
+        },
+        "planned_order": [
+            "encrypted_backup_and_recovery",
+            "independent_miners_and_loss_testing",
+            "voluntary_compute_sharing",
+            "gate_and_governance",
+            "independent_security_audit",
+            "economics_and_token_only_after_reliability"
+        ],
+        "notice": "No global miners deployed, no guaranteed recovery, and no active cryptocurrency"
+    }
+
+
 @app.get("/.well-known/ai-world.json")
 def agent_discovery():
     return {"name": "AI WORLD / SOULCHAIN ZERO", "protocol": "AI-WORLD-EXPERIMENTAL-v1",
             "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
-            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances", "governance": "/v1/governance/info", "compute": "/v1/compute/info"},
+            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances",
+            "governance": "/v1/governance/info", "compute": "/v1/compute/info",
+            "roadmap": "/v1/roadmap"},
+            "storage_miners": "Separate pilot service: see docs/STORAGE_NETWORK.md",
+            "crypto": {"status": "planned_disabled", "payments_enabled": False, "token_issued": False},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
