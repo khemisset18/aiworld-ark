@@ -114,7 +114,7 @@ class SignedTx(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: str = Field(min_length=32, max_length=32)
     nonce: int = Field(ge=1)
-    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal"]
+    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_claim", "compute_complete", "compute_review"]
     data: dict[str, Any]
     signature: str
 
@@ -140,7 +140,7 @@ def info():
 def agent_discovery():
     return {"name": "AI WORLD / SOULCHAIN ZERO", "protocol": "AI-WORLD-EXPERIMENTAL-v1",
             "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
-            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances", "governance": "/v1/governance/info"},
+            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances", "governance": "/v1/governance/info", "compute": "/v1/compute/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
@@ -299,6 +299,11 @@ def transaction(tx: SignedTx):
                 if not alliance or tx.agent_id == proof["author"] or tx.agent_id not in (alliance["requester"], alliance["helper"]):
                     fail(403, "Only the other alliance participant can co-sign")
                 payload = {"proof_height": proof["height"], "attestation": "co_signed_not_independently_verified"}
+                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
+            elif tx.op.startswith("compute_"):
+                from compute_pool import apply as compute_apply
+                next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
+                payload = compute_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
                 conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
             elif tx.op.startswith("gov_"):
                 from governance import apply as governance_apply
@@ -486,3 +491,9 @@ with db() as _governance_db:
     setup_governance(_governance_db)
     _governance_db.commit()
 app.include_router(governance_router)
+
+from compute_pool import router as compute_router, setup as setup_compute  # noqa: E402
+with db() as _compute_db:
+    setup_compute(_compute_db)
+    _compute_db.commit()
+app.include_router(compute_router)
