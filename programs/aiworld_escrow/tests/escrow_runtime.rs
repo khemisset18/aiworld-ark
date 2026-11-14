@@ -4,12 +4,10 @@
 //            --features runtime-tests --test escrow_runtime
 use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
 use aiworld_escrow::{self as escrow_program, EscrowState, TREASURY};
-use solana_program_test::{processor, ProgramTest, ProgramTestContext, ProgramTestBanksClientExt};
+use solana_program_test::{ProgramTest, ProgramTestContext, ProgramTestBanksClientExt};
 use solana_sdk::{
     account::Account,
-    account_info::AccountInfo,
     clock::Clock,
-    entrypoint::ProgramResult,
     instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -17,14 +15,9 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-// Anchor's entrypoint ties the slice and AccountInfo lifetimes together;
-// ProgramTest's generic processor doesn't. A leaked short slice is safe within
-// these finite-process integration tests, never compiled in production.
-fn native_entry(program_id: &Pubkey, infos: &[AccountInfo], data: &[u8]) -> ProgramResult {
-    let infos = Box::leak(Box::new(infos.to_vec()));
-    escrow_program::entry(program_id, infos, data)
-}
-
+// Anchor 0.32 uses solana-invoke for CPIs, which cannot run via the old
+// native processor test stub. Load the **compiled SBF .so** instead, so
+// the buyer-funded system transfer and all account guards actually execute.
 const GROSS: u64 = 1_000_000_000;
 const FEE: u64 = 30_000_000;
 const NET: u64 = 970_000_000;
@@ -50,8 +43,7 @@ async fn start() -> Scenario {
     let provider = Keypair::new();
     let arbiter = Keypair::new();
     let imposter = Keypair::new();
-    let mut pt = ProgramTest::new("aiworld_escrow", escrow_program::id(),
-                                   processor!(native_entry));
+    let mut pt = ProgramTest::new("aiworld_escrow", escrow_program::id(), None);
     pt.add_account(buyer.pubkey(), system_account(8_000_000_000));
     pt.add_account(provider.pubkey(), system_account(1_000_000));
     pt.add_account(arbiter.pubkey(), system_account(1_000_000));
