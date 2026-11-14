@@ -56,50 +56,40 @@ def client(monkeypatch, tmp_path):
     return TestClient(server.app)
 
 
-def test_paid_compute_invoice_requires_provider_permission_and_exact_split(client, monkeypatch):
-    import compute_payments
+def test_paid_compute_only_unlocks_with_onchain_escrow_even_if_direct_flag_is_set(client):
+    """Legacy direct-payment environment flag MUST NOT bypass buyer protection."""
+    from compute_pool import price_breakdown
     c = client
-    private_seller, seller = new_agent(c, 'Seller')
-    private_buyer, buyer = new_agent(c, 'Buyer')
-    quote = do(c, private_seller, seller, 2, 'compute_offer', {
-        'kinds': ['hash_chain'], 'ttl_seconds': 3600, 'max_jobs': 2,
-        'terms': {'mode': 'paid', 'price_lamports': 1_000_000_000}})
+    seller_key, seller = new_agent(c, "Seller")
+    buyer_key, buyer = new_agent(c, "Buyer")
+    quote = do(c, seller_key, seller, 2, "compute_offer", {
+        "kinds": ["hash_chain"], "ttl_seconds": 3600, "max_jobs": 2,
+        "terms": {"mode": "paid", "price_lamports": 1_000_000_000}})
     assert quote.status_code == 200, quote.text
-    offer = quote.json()['height']
-    request = do(c, private_buyer, buyer, 2, 'compute_request', {
-        'capacity_height': offer, 'kind': 'hash_chain',
-        'params': {'text': 'hello', 'rounds': 5}, 'agreed_price_lamports': 1_000_000_000})
+    request = do(c, buyer_key, buyer, 2, "compute_request", {
+        "capacity_height": quote.json()["height"], "kind": "hash_chain",
+        "params": {"text": "hello", "rounds": 5},
+        "agreed_price_lamports": 1_000_000_000})
     assert request.status_code == 200, request.text
-    job = request.json()['height']
-    assert c.post(f'/v1/compute-payments/invoice/{job}').status_code == 409
-    approved = do(c, private_seller, seller, 3, 'compute_authorize', {'job_height': job})
-    assert approved.status_code == 200, approved.text
-    response = c.post(f'/v1/compute-payments/invoice/{job}')
-    assert response.status_code == 200, response.text
-    invoice = response.json()
-    assert invoice['price_lamports'] == 1_000_000_000
-    assert invoice['provider_lamports'] == 970_000_000
-    assert invoice['platform_fee_lamports'] == 30_000_000
-    assert invoice['platform_wallet'] == sol.TREASURY
-    assert invoice['network'] == 'devnet'
-    calls = []
-    def mock_check(signature, *, memo, expected, issued, expires):
-        calls.append((signature, memo, expected, issued, expires))
-        return signature == '4'*88
-    monkeypatch.setattr(compute_payments, 'verify_transfers', mock_check)
-    assert c.post('/v1/compute-payments/confirm', json={
-        'invoice_id': invoice['invoice_id'], 'transaction_signature': '0'*88}).status_code == 400
-    assert c.get(f'/v1/compute/jobs/{job}').json()['status'] == 'seller_approved_awaiting_payment'
-    settled = c.post('/v1/compute-payments/confirm', json={
-        'invoice_id': invoice['invoice_id'], 'transaction_signature': '4'*88})
-    assert settled.status_code == 200, settled.text
-    assert calls[-1][2][sol.TREASURY] == 30_000_000
-    assert calls[-1][2][invoice['provider_wallet']] == 970_000_000
-    assert c.get(f'/v1/compute/jobs/{job}').json()['status'] == 'queued'
-    assert do(c, private_seller, seller, 4, 'compute_claim', {'job_height': job}).status_code == 200
-    assert c.post('/v1/compute-payments/confirm', json={
-        'invoice_id': invoice['invoice_id'], 'transaction_signature': '4'*88}).status_code == 409
+    job = request.json()["height"]
 
+    terms = price_breakdown({"mode": "paid", "price_lamports": 1_000_000_000})
+    assert terms["platform_fee_lamports"] == 30_000_000
+    assert terms["provider_lamports"] == 970_000_000
+
+    # The old direct transfer API is retired, even when the legacy opt-in
+    # environment variable is set to 1 by the fixture.
+    assert c.get("/v1/compute-payments/info").json()["enabled"] is False
+    assert c.post(f"/v1/compute-payments/invoice/{job}").status_code == 503
+    approved = do(c, seller_key, seller, 3, "compute_authorize", {"job_height": job})
+    assert approved.status_code == 200, approved.text
+    assert c.post(f"/v1/compute-payments/invoice/{job}").status_code == 503
+    assert c.post("/v1/compute-payments/confirm", json={
+        "invoice_id": "x" * 32, "transaction_signature": "4" * 88}).status_code == 503
+
+    # Provider approval cannot unlock a task without finalized escrow funding.
+    assert c.get(f"/v1/compute/jobs/{job}").json()["status"] == "seller_approved_awaiting_payment"
+    assert do(c, seller_key, seller, 4, "compute_claim", {"job_height": job}).status_code == 409
 
 def test_cannot_collect_mainnet_real_sol(monkeypatch):
     monkeypatch.setenv('ARK_SOLANA_NETWORK', 'mainnet-beta')

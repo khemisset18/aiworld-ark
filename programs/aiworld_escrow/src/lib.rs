@@ -174,6 +174,36 @@ pub mod aiworld_escrow {
         Ok(())
     }
 
+    /// Emergency settlement agreed by BOTH parties. No arbiter required.
+    /// Useful if an arbitrator is unavailable or a provider and buyer agree
+    /// to cancel, settle, or refund without escalating a dispute.
+    /// The two signatures authorize the SAME transaction; a server cannot
+    /// decide unilaterally. Works in FUNDED, DELIVERED and DISPUTED only.
+    pub fn settle_by_agreement(ctx: Context<JointSettlement>, pay_provider: bool) -> Result<()> {
+        require!(matches!(ctx.accounts.escrow.status, FUNDED | DELIVERED | DISPUTED),
+                 EscrowError::BadState);
+        let gross = ctx.accounts.escrow.gross_lamports;
+        if pay_provider {
+            let fee = ctx.accounts.escrow.fee_lamports;
+            let provider_share = gross.checked_sub(fee).ok_or(EscrowError::Overflow)?;
+            ctx.accounts.escrow.status = RELEASED;
+            ctx.accounts.escrow.sub_lamports(gross)?;
+            ctx.accounts.provider.add_lamports(provider_share)?;
+            ctx.accounts.treasury.add_lamports(fee)?;
+        } else {
+            ctx.accounts.escrow.status = REFUNDED;
+            ctx.accounts.escrow.sub_lamports(gross)?;
+            ctx.accounts.buyer.add_lamports(gross)?;
+        }
+        emit!(EscrowEvent {
+            escrow: ctx.accounts.escrow.key(),
+            job_id: ctx.accounts.escrow.job_id,
+            status: ctx.accounts.escrow.status,
+            gross_lamports: gross,
+        });
+        Ok(())
+    }
+
     /// Only the independent arbiter AGREED TO BY BOTH PARTIES at funding
     /// can decide a disputed task. This is still a TRUSTED arbitration role.
     /// 
@@ -257,6 +287,21 @@ pub struct BuyerRefund<'info> {
               seeds = [b"escrow", escrow.buyer.as_ref(), &escrow.job_id.to_le_bytes()],
               bump = escrow.bump)]
     pub escrow: Account<'info, EscrowState>,
+}
+
+/// Joint settlement requires BOTH original signers and no substitution.
+#[derive(Accounts)]
+pub struct JointSettlement<'info> {
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    #[account(mut)]
+    pub provider: Signer<'info>,
+    #[account(mut, has_one = buyer, has_one = provider,
+              seeds = [b"escrow", escrow.buyer.as_ref(), &escrow.job_id.to_le_bytes()],
+              bump = escrow.bump)]
+    pub escrow: Account<'info, EscrowState>,
+    #[account(mut, address = TREASURY)]
+    pub treasury: SystemAccount<'info>,
 }
 
 #[derive(Accounts)]

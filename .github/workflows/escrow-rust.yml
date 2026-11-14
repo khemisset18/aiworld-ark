@@ -8,10 +8,14 @@ on:
     paths:
       - 'programs/aiworld_escrow/**'
       - '.github/workflows/escrow-rust.yml'
+# Only validate the latest revision; cancel old heavy Agave builds on each push.
+concurrency:
+  group: escrow-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   rust:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Rust compiler
@@ -20,3 +24,19 @@ jobs:
         run: cargo check --manifest-path programs/aiworld_escrow/Cargo.toml
       - name: Rust unit tests
         run: cargo test --manifest-path programs/aiworld_escrow/Cargo.toml --lib
+      - name: Install pinned Solana CLI for SBF compilation
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.13/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Compile Solana BPF program for bank tests (testnet-only)
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          cargo build-sbf --manifest-path programs/aiworld_escrow/Cargo.toml --sbf-out-dir "$GITHUB_WORKSPACE/target/deploy"
+          test -s "$GITHUB_WORKSPACE/target/deploy/aiworld_escrow.so"
+      - name: Solana SBF bank integration tests (executes real compiled instructions; no real SOL)
+        shell: bash
+        env:
+          SBF_OUT_DIR: ${{ github.workspace }}/target/deploy
+        run: cargo test --manifest-path programs/aiworld_escrow/Cargo.toml --features runtime-tests --test escrow_runtime -- --nocapture

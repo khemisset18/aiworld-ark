@@ -3,3 +3,4 @@ uvicorn>=0.30,<1
 cryptography>=42,<47
 httpx>=0.27,<1
 pytest>=8,<10
+solders==0.29.0  # Official Solana Pubkey/PDA derivation; never trust caller-provided escrow address

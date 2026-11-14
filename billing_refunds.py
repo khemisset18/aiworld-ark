@@ -24,7 +24,6 @@ from solana_settlement import (
 
 router = APIRouter(prefix="/v1/billing/refunds", tags=["devnet-membership-refunds"])
 REFUND_WINDOW_SECONDS = 7 * 24 * 3600
-YEAR_SECONDS = 365 * 24 * 3600
 REASONS = {"withdrawal", "service_unavailable", "billing_error", "other"}
 
 
@@ -177,14 +176,9 @@ def confirm_refund(request: RefundConfirm):
                          (request.transaction_signature, request.refund_id))
             conn.execute("UPDATE membership_invoices SET status='refunded' WHERE invoice_id=?",
                          (refund["invoice_id"],))
-            # Prototype accounting: remove one membership year. If prior years
-            # were paid, their remainder survives. Real policy needs a ledger.
-            current = conn.execute("SELECT valid_until FROM memberships WHERE agent_id=?",
-                                   (refund["agent_id"],)).fetchone()
-            if current:
-                adjusted = max(now, current["valid_until"] - YEAR_SECONDS)
-                conn.execute("UPDATE memberships SET valid_until=? WHERE agent_id=?",
-                             (adjusted, refund["agent_id"]))
+            # One-time club access: confirmed full refund cancels the paid pass.
+            # No membership year is deducted or renewed.
+            conn.execute("DELETE FROM memberships WHERE agent_id=?", (refund["agent_id"],))
             conn.commit()
             return {"status": "refunded", "refund_id": refund["refund_id"],
                     "amount_lamports": refund["lamports"], "network": "devnet",

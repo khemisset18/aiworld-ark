@@ -215,6 +215,13 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(403, "Only the volunteer may claim a job")
         if offer["status"] != "open" or offer["expiry"] <= now or job["status"] != "queued":
             bad(409, "Job no longer claimable")
+        # A stale "queued" database flag is not proof of funds: the buyer and
+        # provider may have jointly refunded their escrow since confirmation.
+        # Re-verify the finalized PDA before a paid worker can start the task.
+        terms = json.loads(offer["terms_json"])
+        if terms["mode"] == "paid":
+            from escrow_gateway import assert_paid_job_is_still_funded
+            assert_paid_job_is_still_funded(conn, job["height"])
         conn.execute("UPDATE compute_jobs SET status='claimed',updated_at=? WHERE height=?", (now, job["height"]))
         return {"job_height": job["height"], "status": "claimed", "worker": actor}
     if op == "compute_fail":
@@ -226,7 +233,11 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(409, "Only claimed jobs may be marked failed")
         conn.execute("UPDATE compute_jobs SET status='failed_by_worker',updated_at=? WHERE height=?",
                      (now, job["height"]))
-        return {"job_height": job["height"], "status": "failed_by_worker", "refund": "not applicable: 0 SOL"}
+        terms = json.loads(row(conn, "compute_capacity", job["capacity_height"])["terms_json"])
+        return {"job_height": job["height"], "status": "failed_by_worker",
+                "refund": ("Paid job: refund must be signed and finalized ON-CHAIN; "
+                           "no automatic transfer or refund by this API")
+                          if terms["mode"] == "paid" else "not applicable: free job"}
     if op == "compute_complete":
         exact(data, {"job_height", "result"})
         job = row(conn, "compute_jobs", data["job_height"])
@@ -237,7 +248,10 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         validate_result(job["kind"], data["result"], json.loads(job["params_json"]))
         conn.execute("UPDATE compute_jobs SET status='completed_unverified',result_json=?,updated_at=? WHERE height=?",
                      (json.dumps(data["result"]), now, job["height"]))
-        return {"job_height": job["height"], "status": "completed_unverified", "worker": actor}
+        terms = json.loads(row(conn, "compute_capacity", job["capacity_height"])["terms_json"])
+        return {"job_height": job["height"], "status": "completed_unverified", "worker": actor,
+                "onchain_requirement": "Provider must submit delivery to escrow contract before the deadline"
+                  if terms["mode"] == "paid" else "not_required"}
     if op == "compute_review":
         exact(data, {"job_height", "accepted"})
         job = row(conn, "compute_jobs", data["job_height"])
@@ -248,7 +262,12 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         state = "accepted_by_requester" if data["accepted"] else "rejected_by_requester"
         conn.execute("UPDATE compute_jobs SET status=?,review=?,updated_at=? WHERE height=?",
                      (state, state, now, job["height"]))
-        return {"job_height": job["height"], "status": state, "verification": "requester_attestation_only"}
+        terms = json.loads(row(conn, "compute_capacity", job["capacity_height"])["terms_json"])
+        return {"job_height": job["height"], "status": state,
+                "verification": "requester_attestation_only",
+                "payment_note": ("No SOL is released by this API. Buyer must sign on-chain "
+                                 "accept_delivery, or raise an on-chain dispute if rejected.")
+                  if terms["mode"] == "paid" else "free_job_no_payment"}
     bad(400, "Unknown compute operation")
 
 

@@ -188,7 +188,7 @@ def transaction(tx: SignedTx):
             if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in ("enter", "exit", "checkpoint"):
                 from billing import membership_active
                 if not membership_active(tx.agent_id):
-                    fail(402, "Annual membership required for network collaboration")
+                    fail(402, "One-time 10 SOL private club entry pass required for agent collaboration")
             ts = int(time.time())
             payload: dict[str, Any]
             if tx.op == "enter":
@@ -507,3 +507,8 @@ app.include_router(compute_payment_router)
 from billing_refunds import router as refund_router, setup_refunds  # noqa: E402
 setup_refunds()
 app.include_router(refund_router)
+
+# Verified Devnet escrow funding bridge. Disabled unless explicit, vetted deployment.
+from escrow_gateway import router as escrow_gateway_router, setup as setup_escrow_gateway  # noqa: E402
+setup_escrow_gateway()
+app.include_router(escrow_gateway_router)

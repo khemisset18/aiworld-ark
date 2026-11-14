@@ -1,4 +1,4 @@
-"""AI WORLD fixed 20 SOL/year membership billing (DEVNET TEST ONLY).
+"""AI WORLD private AI-agent club: one-time 10 SOL entry (DEVNET TEST ONLY).
 
 Never enable real mainnet payments from this prototype.
 """
@@ -22,9 +22,11 @@ from solana_settlement import (
 )
 
 router = APIRouter(prefix="/v1/billing", tags=["billing-devnet"])
-ANNUAL_PRICE_SOL = 20
-ANNUAL_PRICE_LAMPORTS = 20 * LAMPORTS_PER_SOL
-ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
+ENTRY_PRICE_SOL = 10
+ENTRY_PRICE_LAMPORTS = ENTRY_PRICE_SOL * LAMPORTS_PER_SOL
+# SQLite compatibility: legacy table has "valid_until". A one-time club pass
+# does not expire annually. The pass is revoked if its payment is refunded.
+PERMANENT_ACCESS_UNTIL = 253402300799
 INVOICE_LIFETIME = 15 * 60
 
 
@@ -73,8 +75,10 @@ class Confirmation(BaseModel):
 def info():
     return {
         "enabled": enabled(),
-        "currency": "SOL", "annual_price_sol": ANNUAL_PRICE_SOL,
-        "annual_price_lamports": ANNUAL_PRICE_LAMPORTS,
+        "currency": "SOL", "pricing_model": "one_time_club_entry",
+        "entry_fee_sol": ENTRY_PRICE_SOL,
+        "entry_fee_lamports": ENTRY_PRICE_LAMPORTS,
+        "renewal_required": False, "annual_subscription": False,
         "recipient": TREASURY, "network": "devnet",
         "status": "prototype; mainnet payment collection is NOT implemented",
     }
@@ -95,26 +99,34 @@ def invoice(request: InvoiceRequest):
             raise HTTPException(401, "Active admitted agent required")
         message = canonical({"agent_id": request.agent_id,
                              "timestamp": request.timestamp,
-                             "action": "annual_subscription"})
+                             "action": "club_entry"})
         try:
             Ed25519PublicKey.from_public_bytes(decode64(agent["public_key"])).verify(
                 decode64(request.signature), message)
         except (InvalidSignature, ValueError) as exc:
             raise HTTPException(401, "Invalid agent signature") from exc
+        if conn.execute("SELECT 1 FROM memberships WHERE agent_id=? AND valid_until>?",
+                        (request.agent_id, now)).fetchone():
+            raise HTTPException(409, "Agent already has a club access pass")
+        if conn.execute("""SELECT 1 FROM membership_invoices
+                          WHERE agent_id=? AND status='unpaid' AND expires_at>?""",
+                        (request.agent_id, now)).fetchone():
+            raise HTTPException(409, "A current unpaid club entry invoice already exists")
         identifier = secrets.token_hex(16)
-        memo = "AIWORLD-MEMBER20:" + identifier
+        memo = "AIWORLD-CLUB10:" + identifier
         conn.execute("""INSERT INTO membership_invoices
             (invoice_id,agent_id,price_lamports,recipient,created_at,expires_at,memo,status,tx_signature)
             VALUES (?,?,?,?,?,?,?,'unpaid',NULL)""",
-            (identifier, request.agent_id, ANNUAL_PRICE_LAMPORTS,
+            (identifier, request.agent_id, ENTRY_PRICE_LAMPORTS,
              TREASURY, now, now + INVOICE_LIFETIME, memo))
         conn.commit()
     return {
         "invoice_id": identifier, "agent_id": request.agent_id,
-        "amount_sol": "20", "amount_lamports": ANNUAL_PRICE_LAMPORTS,
+        "amount_sol": "10", "amount_lamports": ENTRY_PRICE_LAMPORTS,
+        "pricing_model": "one_time_club_entry", "renewal_required": False,
         "recipient": TREASURY, "memo": memo,
         "network": "devnet", "expires_at": now + INVOICE_LIFETIME,
-        "instructions": "Send exactly 20 devnet SOL and the memo in ONE transaction.",
+        "instructions": "Send exactly 10 Devnet SOL and the memo in ONE transaction.",
         "warning": "DEVELOPMENT ONLY — do not send real SOL to this address based on this test invoice.",
     }
 
@@ -157,7 +169,9 @@ def confirm(request: Confirmation):
                 raise HTTPException(409, "Transaction already used for another invoice") from exc
             existing = conn.execute("SELECT valid_until FROM memberships WHERE agent_id=?",
                                     (row["agent_id"],)).fetchone()
-            expiry = max(now, existing["valid_until"] if existing else now) + ONE_YEAR_SECONDS
+            if existing and existing["valid_until"] > now:
+                raise HTTPException(409, "This agent already has club access")
+            expiry = PERMANENT_ACCESS_UNTIL
             conn.execute("""UPDATE membership_invoices
                 SET status='paid', tx_signature=? WHERE invoice_id=?""",
                 (request.transaction_signature, request.invoice_id))
@@ -166,7 +180,8 @@ def confirm(request: Confirmation):
                 (row["agent_id"], expiry))
             conn.commit()
             return {"ok": True, "agent_id": row["agent_id"], "valid_until": expiry,
-                    "paid_sol": "20", "network": "devnet"}
+                    "access_type": "one_time_club_entry", "renewal_required": False,
+                    "paid_sol": "10", "network": "devnet"}
         except Exception:
             conn.rollback()
             raise

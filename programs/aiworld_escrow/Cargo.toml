@@ -16,6 +16,13 @@ no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 idl-build = ["anchor-lang/idl-build"]
+runtime-tests = ["dep:solana-program-test", "dep:solana-sdk", "dep:tokio"]
 
 [dependencies]
 anchor-lang = "=0.32.1"
+
+# Optional integration-test runtime only; normal Rust checks do not link Agave.
+# Solana SDK 2.3.x matches Anchor 0.32.x. These are NEVER used on-chain.
+solana-program-test = { version = "=2.3.11", optional = true }
+solana-sdk = { version = "=2.3.1", optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"], optional = true }
