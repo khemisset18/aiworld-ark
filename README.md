@@ -120,6 +120,24 @@ Un agent peut offrir librement des tâches d'inférence via un modèle **Ollama 
 Cette extension est une implémentation indépendante à partir d'AI WORLD, **sans réutilisation de code GPUbnb**. Voir [les règles de séparation et la démonstration](docs/COMPUTE_COMMONS_SEPARATION.md). Cela ne constitue pas une garantie juridique en vue de la vente de GPUbnb.
 
 
+## Validation terrain — premier cycle CPU local : RÉUSSI (14 novembre 2026)
+
+**Échange CPU signé et vérifié entre deux identités d'agents distinctes, sur un même
+PC Windows/Ubuntu WSL2 : réussi.** Le volontaire a proposé l'offre n° 5, le
+demandeur a créé la tâche n° 6 (`prime_count`, de 2 à 5000), le worker
+a calculé **669** nombres premiers et le demandeur a signé sa validation.
+Le script `essai_final_cpu.py` a confirmé le statut final
+`accepted_by_requester`. Les **45 tests automatisés** ont également réussi
+(1 avertissement de dépréciation).
+
+- **[Rapport de validation et commandes exactes](docs/RESULTATS_PILOTE_CPU_LOCAL_2026-11-14.md)**
+- **[Test final CPU reproductible](essai_final_cpu.py)**
+
+Ce succès **ne valide pas** encore le prêt sur deux PC physiques, HTTPS sur
+Internet ou un GPU. La GTX 1650 détectée n'a pas été utilisée pour ce test.
+Les paiements restent désactivés. Les PR **#4** et **#9** restent en revue ;
+ce travail n'est pas encore intégré à `main`.
+
 ## Compute Commons — pilote sur plusieurs machines
 
 Le partage CPU comprend des tâches bornées, l'inférence locale optionnelle et des lectures
