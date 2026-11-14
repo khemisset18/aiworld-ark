@@ -75,3 +75,29 @@ def test_gate_requires_pass_and_consumes_one_time_access(tmp_path, monkeypatch):
     assert do(client, key, aid, 1, "enter", enter).status_code == 200
     assert do(client, key, aid, 1, "enter", enter).status_code == 409
     assert client.get("/v1/chain/verify").json()["valid"]
+
+
+def test_agent_cli_completes_signed_gate_before_enter(tmp_path, monkeypatch):
+    """The remote-style CLI must work with the default mandatory admission gate."""
+    monkeypatch.setenv("SOULCHAIN_DB", str(tmp_path / "gate_cli.sqlite3"))
+    monkeypatch.setenv("ARK_ADMISSION_REQUIRED", "1")
+    import server
+    import agent_cli
+    importlib.reload(server)
+    c = TestClient(server.app)
+    record = agent_cli.client_new(tmp_path / "pilot_key.json", "Pilot agent")
+
+    def local_api(_base, path, method="GET", body=None):
+        response = c.request(method, path, json=body)
+        assert response.status_code < 400, response.text
+        return response.json()
+
+    monkeypatch.setattr(agent_cli, "api", local_api)
+    completed = agent_cli.pass_gate("local", record)
+    assert completed["passed"] is True
+    key = Ed25519PrivateKey.from_private_bytes(agent_cli.un64(record["private_key"]))
+    entered = do(c, key, record["agent_id"], 1, "enter", {
+        "public_key": record["public_key"], "label": record["name"],
+        "capabilities": ["pilot"]})
+    assert entered.status_code == 200, entered.text
+    assert c.get(f"/v1/agents/{record['agent_id']}").json()["status"] == "active"
