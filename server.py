@@ -185,7 +185,9 @@ def transaction(tx: SignedTx):
 
             # Production membership gate can be switched on independently of testing.
             # Joining, leaving and exporting backups remain possible without payment.
-            if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in ("enter", "exit", "checkpoint"):
+            if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in (
+                    "enter", "exit", "checkpoint", "compute_withdraw", "compute_recover",
+                    "compute_fail", "compute_complete", "compute_review"):
                 from billing import membership_active
                 if not membership_active(tx.agent_id):
                     fail(402, "Annual membership required for network collaboration")
