@@ -1,0 +1,46 @@
+# Experimental single-server HTTPS pilot. See docs/COMPUTE_PILOT.md.
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      SOULCHAIN_DB: /data/soulchain.sqlite3
+      ARK_ADMISSION_REQUIRED: "1"
+      ARK_PAYMENT_REQUIRED: "0"
+      ARK_BILLING_ENABLED: "0"
+    volumes:
+      - ark_data:/data
+    expose:
+      - "8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  https:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      AIWORLD_DOMAIN: ${AIWORLD_DOMAIN:?Define a DNS name in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  ark_data:
+  caddy_data:
+  caddy_config:

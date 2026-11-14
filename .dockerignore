@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+__pycache__
+.pytest_cache
+*.pyc
+*.sqlite3*
+*.ark.json
+*.capsule
+*_key.json
+agent_key.json
+*secret*
+.env
+*.env
+*.log

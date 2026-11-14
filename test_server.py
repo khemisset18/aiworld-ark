@@ -17,6 +17,8 @@ def canonical(d): return json.dumps(d, sort_keys=True, ensure_ascii=False, separ
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("SOULCHAIN_DB", str(tmp_path / "test.sqlite3"))
+    # Legacy transport tests do not exercise THE GATE (covered in test_admission.py).
+    monkeypatch.setenv("ARK_ADMISSION_REQUIRED", "0")
     import server
     importlib.reload(server)
     return TestClient(server.app)

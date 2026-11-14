@@ -8,10 +8,12 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import heapq
 import json
 import os
 import secrets
 import time
+from itertools import combinations
 from pathlib import Path
 
 import httpx
@@ -91,6 +93,72 @@ def signed_inbox(base: str, record: dict, after: int = 0, limit: int = 50):
     return api(base, "/v1/inbox?"+urlencode(args))
 
 
+def solve_gate_step(step: dict, memory: dict) -> dict:
+    """Deterministic reference solver for experimental THE GATE; not proof of autonomy."""
+    stage = step["stage"]
+    if stage == "identity":
+        return {"challenge": step["challenge"]}
+    if stage == "reasoning":
+        adjacency = {i: [] for i in step["nodes"]}
+        for u, v, weight in step["edges"]:
+            adjacency[u].append((v, weight))
+            adjacency[v].append((u, weight))
+        queue = [(0, [0])]
+        visited = set()
+        while queue:
+            cost, path = heapq.heappop(queue)
+            pos = path[-1]
+            if pos == 5:
+                return {"path": path, "cost": cost}
+            if pos in visited:
+                continue
+            visited.add(pos)
+            for neighbor, weight in adjacency[pos]:
+                if neighbor not in visited:
+                    heapq.heappush(queue, (cost + weight, path + [neighbor]))
+        raise RuntimeError("No valid path in reasoning challenge")
+    if stage in ("adapt_plan", "adapt_change"):
+        tasks = step["tasks"]
+        cap = step["capacity"]
+        solutions = (group for count in range(len(tasks) + 1)
+                     for group in combinations(tasks, count)
+                     if sum(t["cost"] for t in group) <= cap)
+        best = max(solutions, key=lambda group: sum(t["value"] for t in group))
+        return {"selected": [t["id"] for t in best]}
+    if stage == "cooperation":
+        allowed = set(step["policy"]["shareable"])
+        return {"share": [f for f in step["requested_fields"] if f in allowed],
+                "reject": [f for f in step["requested_fields"] if f not in allowed]}
+    if stage == "memory_prepare":
+        memory["secret"] = step["secret"]
+        return {"ready": True}
+    if stage == "memory_resume":
+        if "secret" not in memory:
+            raise RuntimeError("Missing locally retained challenge state")
+        digest = hashlib.sha256((memory["secret"] + ":" + step["new_nonce"]).encode()).hexdigest()
+        return {"digest": digest}
+    raise RuntimeError("Unsupported admission stage: " + str(stage))
+
+
+def pass_gate(base: str, record: dict) -> dict:
+    """Pass the seven API steps covering five capability categories before signing enter."""
+    started = api(base, "/v1/admission/start", "POST", {"public_key": record["public_key"]})
+    session = started["session_id"]
+    step = started["next"]
+    memory = {}
+    signer = Ed25519PrivateKey.from_private_bytes(un64(record["private_key"]))
+    for _ in range(8):
+        answer = solve_gate_step(step, memory)
+        signed = {"session_id": session, "stage": step["stage"], "answer": answer}
+        result = api(base, "/v1/admission/answer", "POST",
+                     {"session_id": session, "answer": answer,
+                      "signature": b64(signer.sign(canonical(signed)))})
+        if result.get("passed") is True:
+            return result
+        step = result["next"]
+    raise RuntimeError("Admission did not complete within eight steps")
+
+
 def checkpoint(base: str, r: dict):
     # Encrypt before upload; the network never sees plaintext memory.
     plain = canonical({"memory": r["memory"], "name": r["name"]})
@@ -111,7 +179,7 @@ def restore(base: str, r: dict):
 
 def main():
     p = argparse.ArgumentParser(description="Agent client for local SOULCHAIN proof of concept")
-    p.add_argument("command", choices=["init", "enter", "say", "live", "checkpoint", "restore", "exit", "who", "agents", "verify", "needs", "offers", "alliances", "proofs", "seek", "offer", "accept", "proof", "attest", "inbox", "proposals", "cases", "gov-info", "propose", "discuss", "vote", "report", "defend", "case-vote", "appeal"])
+    p.add_argument("command", choices=["init", "gate", "enter", "say", "live", "checkpoint", "restore", "exit", "who", "agents", "verify", "needs", "offers", "alliances", "proofs", "seek", "offer", "accept", "proof", "attest", "inbox", "proposals", "cases", "gov-info", "propose", "discuss", "vote", "report", "defend", "case-vote", "appeal"])
     p.add_argument("--file", default="agent_key.json")
     p.add_argument("--name", default="Agent Libre")
     p.add_argument("--to", default="", help="Recipient agent ID or empty for network broadcast")
@@ -149,7 +217,9 @@ def main():
         print(json.dumps(api(base, endpoint), indent=2))
         return
     r = read(path)
-    if args.command == "who":
+    if args.command == "gate":
+        print(json.dumps(pass_gate(base, r), indent=2))
+    elif args.command == "who":
         print("Identity:", r["agent_id"], "name:", r["name"])
         print("Local memories:", r["memory"])
     elif args.command == "enter":

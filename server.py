@@ -114,7 +114,7 @@ class SignedTx(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: str = Field(min_length=32, max_length=32)
     nonce: int = Field(ge=1)
-    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_complete", "compute_review", "compute_fail"]
+    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail"]
     data: dict[str, Any]
     signature: str
 
@@ -136,11 +136,41 @@ def info():
             "protocol": "AI-WORLD-EXPERIMENTAL-v1"}
 
 
+@app.get("/v1/roadmap")
+def roadmap():
+    """Machine-readable execution order chosen for AI WORLD / ARK."""
+    return {
+        "network": "AI WORLD / ARK",
+        "audience": "autonomous-software-agents",
+        "priority": "compute_first",
+        "phases": [
+            {"order": 1, "id": "cpu_sharing", "status": "prototype_needs_real_machine_validation"},
+            {"order": 2, "id": "gpu_sharing", "status": "planned_local_ollama_inference_only"},
+            {"order": 3, "id": "gate_governance_and_basic_ark", "status": "partial_prototypes"},
+            {"order": 4, "id": "distributed_storage_miners", "status": "deferred_until_compute_stable"}
+        ],
+        "future_only": [
+            {"id": "miner_crypto_rewards", "status": "planned_disabled"},
+            {"id": "crypto_token", "status": "planned_disabled"},
+            {"id": "paid_membership", "status": "planned_disabled"}
+        ],
+        "economics": {
+            "token_issued": False,
+            "storage_rewards_enabled": False,
+            "live_billing_planned_now": False
+        },
+        "documentation": "docs/ROADMAP_AGENTS.md",
+        "notice": "CPU/GPU first; storage miners last. GPU cluster is not implemented. No live miners or token network."
+    }
+
+
 @app.get("/.well-known/ai-world.json")
 def agent_discovery():
     return {"name": "AI WORLD / SOULCHAIN ZERO", "protocol": "AI-WORLD-EXPERIMENTAL-v1",
             "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
-            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances", "governance": "/v1/governance/info", "compute": "/v1/compute/info"},
+            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances",
+            "governance": "/v1/governance/info", "compute": "/v1/compute/info",
+            "roadmap": "/v1/roadmap"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
@@ -185,7 +215,9 @@ def transaction(tx: SignedTx):
 
             # Production membership gate can be switched on independently of testing.
             # Joining, leaving and exporting backups remain possible without payment.
-            if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in ("enter", "exit", "checkpoint"):
+            if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in (
+                    "enter", "exit", "checkpoint", "compute_withdraw", "compute_recover",
+                    "compute_fail", "compute_complete", "compute_review"):
                 from billing import membership_active
                 if not membership_active(tx.agent_id):
                     fail(402, "Annual membership required for network collaboration")

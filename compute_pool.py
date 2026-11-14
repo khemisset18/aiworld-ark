@@ -10,9 +10,11 @@ import re
 import sqlite3
 import time
 from fastapi import APIRouter, HTTPException, Query
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 router = APIRouter(prefix="/v1/compute", tags=["voluntary-compute-pool"])
-OPERATIONS = {"compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_complete", "compute_review", "compute_fail"}
+OPERATIONS = {"compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail"}
 KINDS = {"hash_chain", "prime_count", "inference"}
 FEE_BPS = 300  # 3% of paid job gross, not charged for free compute.
 BPS_DENOMINATOR = 10_000
@@ -48,7 +50,8 @@ def setup(conn: sqlite3.Connection):
         height INTEGER PRIMARY KEY, capacity_height INTEGER NOT NULL,
         requester TEXT NOT NULL, worker TEXT NOT NULL, kind TEXT NOT NULL,
         params_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
-        result_json TEXT, review TEXT, updated_at INTEGER NOT NULL);
+        result_json TEXT, review TEXT, updated_at INTEGER NOT NULL,
+        lease_expires_at INTEGER, attempts INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS idx_compute_capacity ON compute_jobs(capacity_height,status);
     """)
     # Backward-compatible upgrade of previously initialized local SQLite databases.
@@ -57,6 +60,11 @@ def setup(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE compute_capacity ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]'")
     if "terms_json" not in columns:
         conn.execute("""ALTER TABLE compute_capacity ADD COLUMN terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}'""")
+    job_columns = {r[1] for r in conn.execute("PRAGMA table_info(compute_jobs)")}
+    if "lease_expires_at" not in job_columns:
+        conn.execute("ALTER TABLE compute_jobs ADD COLUMN lease_expires_at INTEGER")
+    if "attempts" not in job_columns:
+        conn.execute("ALTER TABLE compute_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
 
 
 def model_name(value):
@@ -208,8 +216,30 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(403, "Only the volunteer may claim a job")
         if offer["status"] != "open" or offer["expiry"] <= now or job["status"] != "queued":
             bad(409, "Job no longer claimable")
-        conn.execute("UPDATE compute_jobs SET status='claimed',updated_at=? WHERE height=?", (now, job["height"]))
-        return {"job_height": job["height"], "status": "claimed", "worker": actor}
+        conn.execute("UPDATE compute_jobs SET status='claimed',updated_at=?,lease_expires_at=?,attempts=attempts+1 WHERE height=?",
+                     (now, now + 180, job["height"]))
+        return {"job_height": job["height"], "status": "claimed", "worker": actor,
+                "lease_expires_at": now + 180}
+    if op == "compute_recover":
+        exact(data, {"job_height"})
+        job = row(conn, "compute_jobs", data["job_height"])
+        if actor not in (job["worker"], job["requester"]):
+            bad(403, "Only job participants can recover a job")
+        offer = row(conn, "compute_capacity", job["capacity_height"])
+        if job["status"] == "queued" and (offer["status"] != "open" or offer["expiry"] <= now):
+            state = "failed_expired"
+        elif job["status"] == "claimed":
+            deadline = job["lease_expires_at"] if job["lease_expires_at"] is not None else job["updated_at"] + 180
+            if deadline > now:
+                bad(409, "Claim lease has not expired")
+            state = ("queued" if job["attempts"] < 3 and offer["status"] == "open"
+                     and offer["expiry"] > now else "failed_timeout")
+        else:
+            bad(409, "Job is not recoverable")
+        conn.execute("UPDATE compute_jobs SET status=?,lease_expires_at=NULL,updated_at=? WHERE height=?",
+                     (state, now, job["height"]))
+        return {"job_height": job["height"], "status": state,
+                "attempts": job["attempts"], "notice": "A late result from a previous claim will be rejected"}
     if op == "compute_fail":
         exact(data, {"job_height"})
         job = row(conn, "compute_jobs", data["job_height"])
@@ -217,7 +247,7 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(403, "Only the volunteer may stop their own job")
         if job["status"] != "claimed":
             bad(409, "Only claimed jobs may be marked failed")
-        conn.execute("UPDATE compute_jobs SET status='failed_by_worker',updated_at=? WHERE height=?",
+        conn.execute("UPDATE compute_jobs SET status='failed_by_worker',updated_at=?,lease_expires_at=NULL WHERE height=?",
                      (now, job["height"]))
         return {"job_height": job["height"], "status": "failed_by_worker", "refund": "not applicable: 0 SOL"}
     if op == "compute_complete":
@@ -228,7 +258,9 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         if job["status"] != "claimed":
             bad(409, "Job must be claimed and not cancelled")
         validate_result(job["kind"], data["result"], json.loads(job["params_json"]))
-        conn.execute("UPDATE compute_jobs SET status='completed_unverified',result_json=?,updated_at=? WHERE height=?",
+        if job["lease_expires_at"] is not None and job["lease_expires_at"] <= now:
+            bad(409, "Claim lease expired; recover and claim the job again")
+        conn.execute("UPDATE compute_jobs SET status='completed_unverified',result_json=?,updated_at=?,lease_expires_at=NULL WHERE height=?",
                      (json.dumps(data["result"]), now, job["height"]))
         return {"job_height": job["height"], "status": "completed_unverified", "worker": actor}
     if op == "compute_review":
@@ -278,7 +310,7 @@ def offers(status: str = "available", limit: int = Query(50, ge=1, le=100)):
 def jobs(capacity_height: int | None = None, requester: str | None = None,
          status: str = "all", limit: int = Query(50, ge=1, le=100)):
     from server import db
-    if status not in ("all", "queued", "awaiting_payment", "seller_approved_awaiting_payment", "claimed", "completed_unverified", "accepted_by_requester", "rejected_by_requester", "cancelled", "failed_by_worker"):
+    if status not in ("all", "queued", "awaiting_payment", "seller_approved_awaiting_payment", "claimed", "completed_unverified", "accepted_by_requester", "rejected_by_requester", "cancelled", "failed_by_worker", "failed_timeout", "failed_expired"):
         bad(400, "Invalid job status")
     if capacity_height is not None and capacity_height < 1:
         bad(400, "Invalid capacity height")
@@ -297,7 +329,13 @@ def jobs(capacity_height: int | None = None, requester: str | None = None,
     where = " WHERE " + " AND ".join(filters) if filters else ""
     with db() as conn:
         rows = conn.execute("SELECT * FROM compute_jobs"+where+" ORDER BY height DESC LIMIT ?", (*values, limit)).fetchall()
-        return [_present(r) for r in rows]
+        return [_public_job(r) for r in rows]
+
+
+def _public_job(r):
+    # Task inputs and outputs may contain private prompts. Public discovery is metadata-only.
+    return {k: r[k] for k in ("height", "capacity_height", "requester", "worker",
+                               "kind", "status", "updated_at", "lease_expires_at", "attempts")}
 
 
 def _present(r):
@@ -305,8 +343,57 @@ def _present(r):
             "result": json.loads(r["result_json"]) if r["result_json"] else None}
 
 
+def _verify_signed_view(conn, agent_id: str, timestamp: int, signature: str, path: str, scope: dict):
+    from server import canonical, decode64
+    if abs(int(time.time()) - timestamp) > 120:
+        bad(401, "Expired signed read")
+    agent = conn.execute("SELECT public_key,status FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
+    if agent is None or agent["status"] != "active":
+        bad(401, "Unknown or inactive agent")
+    message = {"agent_id": agent_id, "timestamp": timestamp, "path": path, **scope}
+    try:
+        Ed25519PublicKey.from_public_bytes(decode64(agent["public_key"])).verify(
+            decode64(signature), canonical(message))
+    except (InvalidSignature, ValueError):
+        bad(401, "Invalid signed read")
+    return agent_id
+
+
+@router.get("/assigned")
+def assigned_jobs(agent_id: str, timestamp: int, signature: str,
+                  capacity_height: int = Query(ge=1), status: str = "queued",
+                  limit: int = Query(default=50, ge=1, le=100)):
+    """Only the owner of the computing offer may read task inputs."""
+    from server import db
+    if status not in ("queued", "claimed", "all"):
+        bad(400, "Invalid assigned job status")
+    with db() as conn:
+        _verify_signed_view(conn, agent_id, timestamp, signature, "/v1/compute/assigned",
+                            {"capacity_height": capacity_height, "status": status, "limit": limit})
+        offer = row(conn, "compute_capacity", capacity_height)
+        if offer["owner"] != agent_id:
+            bad(403, "Only this capacity's owner can read assigned jobs")
+        query = ("SELECT * FROM compute_jobs WHERE capacity_height=? AND worker=?" +
+                 ("" if status == "all" else " AND status=?") + " ORDER BY height LIMIT ?")
+        params = (capacity_height, agent_id, limit) if status == "all" else (capacity_height, agent_id, status, limit)
+        return [_present(j) for j in conn.execute(query, params).fetchall()]
+
+
+@router.get("/jobs/{height}/private")
+def private_job(height: int, agent_id: str, timestamp: int, signature: str):
+    """Only requester and worker may read the task input and result."""
+    from server import db
+    with db() as conn:
+        _verify_signed_view(conn, agent_id, timestamp, signature,
+                            f"/v1/compute/jobs/{height}/private", {})
+        task = row(conn, "compute_jobs", height)
+        if agent_id not in (task["requester"], task["worker"]):
+            bad(403, "Not a participant in this task")
+        return _present(task)
+
+
 @router.get("/jobs/{height}")
 def job_detail(height: int):
     from server import db
     with db() as conn:
-        return _present(row(conn, "compute_jobs", height))
+        return _public_job(row(conn, "compute_jobs", height))

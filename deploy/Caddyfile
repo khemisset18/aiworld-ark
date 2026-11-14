@@ -1,0 +1,13 @@
+# A valid DNS A/AAAA record and reachable ports 80/443 are required.
+{$AIWORLD_DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 512KB
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        X-Frame-Options DENY
+    }
+    reverse_proxy api:8000
+}
