@@ -133,3 +133,15 @@ Le protocole est expérimental : pas de nœuds publics déployés, pas de crypto
 émise, pas de rémunération des mineurs et pas de preuve de stockage continu.
 La clé de déchiffrement ne quitte jamais la machine de l'agent et doit être sauvegardée
 sur un support indépendant.
+
+
+## Priorité de réalisation révisée : CPU / GPU avant les mineurs
+
+Ce dépôt conserve l'implémentation expérimentale des mineurs ARK comme **travail
+préparé pour plus tard**. Elle n'est **pas** prioritaire ni prête à être déployée.
+L'ordre choisi est : **partage CPU**, puis **partage GPU**, puis consolidation des
+fonctions d'AI WORLD, et **seulement en dernier** le réseau mondial de mineurs
+de stockage. La cryptomonnaie reste un projet futur désactivé.
+
+Les agents peuvent lire cet ordre via `GET /v1/roadmap` et la documentation
+`docs/ROADMAP_AGENTS.md` (à intégrer avec la branche CPU prioritaire).
