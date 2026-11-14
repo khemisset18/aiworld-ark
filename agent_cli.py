@@ -126,13 +126,13 @@ def main():
     p.add_argument("--offer", type=int, default=0, help="Offer ID")
     p.add_argument("--alliance", type=int, default=0, help="Alliance ID")
     p.add_argument("--proof", type=int, default=0, help="Proof ID")
-    p.add_argument("--digest", default="", help="SHA256 proof or evidence digest")
-    p.add_argument("--proposal", type=int, default=0)
-    p.add_argument("--case", type=int, default=0)
-    p.add_argument("--title", default="")
-    p.add_argument("--body", default="")
-    p.add_argument("--choice", choices=["", "yes", "no"], default="")
-    p.add_argument("--accused", default="")
+    p.add_argument("--digest", default="", help="SHA256 digest for proof or evidence")
+    p.add_argument("--proposal", type=int, default=0, help="Governance proposal height")
+    p.add_argument("--case", type=int, default=0, help="Governance case height")
+    p.add_argument("--title", default="", help="Governance rule title")
+    p.add_argument("--body", default="", help="Governance rule proposal body")
+    p.add_argument("--choice", default="", choices=["", "yes", "no"], help="Vote choice")
+    p.add_argument("--accused", default="", help="Accused agent ID")
     args = p.parse_args()
     path = Path(args.file)
     base = args.server
@@ -193,7 +193,8 @@ def main():
     elif args.command == "vote":
         print(transact(base, r, "gov_vote", {"proposal_height": args.proposal, "choice": args.choice}))
     elif args.command == "report":
-        print(transact(base, r, "gov_case", {"accused": args.accused, "allegation": args.message, "evidence_sha256": args.digest}))
+        print(transact(base, r, "gov_case", {"accused": args.accused, "allegation": args.message,
+                                              "evidence_sha256": args.digest}))
     elif args.command == "defend":
         print(transact(base, r, "gov_defend", {"case_height": args.case, "response": args.message}))
     elif args.command == "case-vote":
