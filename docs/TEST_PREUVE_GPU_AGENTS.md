@@ -120,6 +120,47 @@ vérifier d'abord `curl http://127.0.0.1:11434/api/version`.
 **Ne télécharger ni lancer de modèle dans cette étape.** Il faudra ensuite
 prouver l'accélération GPU réelle et le retour du résultat au PC2.
 
+## Incident d'installation Ollama sous PC1 WSL2 — diagnostic et correction
+
+L'installation lancée par l'opérateur avec `curl -fsSL https://ollama.com/install.sh | sh`
+s'est interrompue sur :
+
+```text
+ERROR: This version requires zstd for extraction. Please install zstd and try again:
+- Debian/Ubuntu: sudo apt-get install zstd
+```
+
+Les commandes `ollama --version`, `ollama pull smollm2:135m` ont échoué
+car **Ollama n'était pas installé**, et `curl http://127.0.0.1:11434/api/version`
+échouait parce qu'aucun serveur n'écoutait. **Aucune inférence GPU ni
+installation Ollama réussie n'est attestée par ces sorties.**
+
+Correction sur **PC1 Ubuntu WSL2** :
+
+```bash
+sudo apt install -y zstd
+curl -fsSL https://ollama.com/install.sh | sh
+ollama --version
+curl http://127.0.0.1:11434/api/version
+```
+
+Si le service Ollama n'est pas actif après installation, essayer
+`sudo systemctl start ollama` **si systemd est actif** ; sinon lancer
+`ollama serve` dans un terminal Ubuntu conservé ouvert, puis
+`curl http://127.0.0.1:11434/api/version` dans un autre terminal.
+Une fois le service fonctionnel, télécharger `ollama pull smollm2:135m`.
+
+L'installateur officiel exige explicitement `zstd` pour ses archives
+`.tar.zst`, ce qui confirme ce diagnostic.
+[Source officielle : installateur Ollama](https://github.com/ollama/ollama/blob/main/scripts/install.sh).
+
+Après cette étape, exécuter le **nouveau test local**
+`python essai_gpu_pc1.py` depuis le `.venv` de `~/aiworld-ark`.
+Le script détecte la présence réelle du modèle en VRAM via
+`/api/ps`, vérifie la réponse de génération et appelle également le
+chemin `volunteer_inference.infer_local` utilisé dans AI WORLD.
+**Ce test ne remplace pas encore la preuve distante PC1↔PC2**.
+
 ## Étape 1 — Architecture de la preuve (quand la température sera normale)
 
 Le coordinateur reste sur PC1. **On inverse les rôles du pilote CPU** : cette fois, le PC1 héberge le volontaire GPU ; le PC2 demande une réponse générée par un modèle autorisé.
