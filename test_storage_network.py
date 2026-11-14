@@ -173,3 +173,17 @@ def test_watch_once_replicates_state_and_signs_manifest(tmp_path):
     signed = verify_manifest(receipts[0])
     assert signed["agent_id"] == agent["agent_id"]
     assert len(signed["replicas"]) == 3
+
+
+def test_storage_miner_roadmap_exposes_no_payments(tmp_path):
+    node = TestClient(create_app(tmp_path / "miner", token="T" * 40))
+    overview = node.get("/v1/storage/info").json()
+    assert overview["future_miner_rewards"]["status"] == "planned_disabled"
+    assert overview["future_miner_rewards"]["token_issued"] is False
+    future = node.get("/v1/storage/roadmap")
+    assert future.status_code == 200
+    assert future.json()["financial_status"] == {
+        "miner_rewards_enabled": False, "token_issued": False,
+        "payments_enabled": False
+    }
+    assert "crypto_token" in future.json()["planned_not_active"]
