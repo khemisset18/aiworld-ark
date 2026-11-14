@@ -12,7 +12,7 @@ import pytest
 
 from compute_resources import inspect_resources, nvidia_gpus, public_resources, run_limited
 from test_forge import new_agent, do
-from test_compute import c  # isolated FastAPI + temporary SQLite fixture
+from test_compute import c, _signed_read  # isolated FastAPI + signed reads
 
 
 def test_bounded_real_cpu_hash_and_primes():
@@ -138,3 +138,62 @@ def test_invalid_volunteer_limits_are_rejected(c, limits):
         "limits": limits
     })
     assert response.status_code == 400, response.text
+
+
+def test_real_signed_cpu_exchange_respects_volunteer_local_limits(c, monkeypatch):
+    """Coordinator and two agent identities execute the actual worker protocol."""
+    import agent_cli
+    import compute_worker
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding, PrivateFormat, NoEncryption
+    )
+    from test_forge import b64
+    provider_key, provider = new_agent(c, "CPU provider")
+    client_key, client = new_agent(c, "CPU requester")
+    offer = do(c, provider_key, provider, 2, "compute_offer", {
+        "kinds": ["hash_chain"], "max_jobs": 1, "ttl_seconds": 3600,
+        "limits": {"max_wall_seconds": 30, "max_memory_mb": 2048}
+    })
+    assert offer.status_code == 200
+    height = offer.json()["height"]
+    request = do(c, client_key, client, 2, "compute_request", {
+        "capacity_height": height, "kind": "hash_chain",
+        "params": {"text": "test signed CPU", "rounds": 64}
+    })
+    assert request.status_code == 200
+    job_height = request.json()["height"]
+
+    def local_api(_base, path, method="GET", body=None):
+        response = c.request(method, path, json=body)
+        if response.status_code >= 400:
+            raise SystemExit(str(response.status_code) + " " + response.text)
+        return response.json()
+
+    monkeypatch.setattr(agent_cli, "api", local_api)
+    monkeypatch.setattr(compute_worker, "api", local_api)
+    account = {
+        "agent_id": provider,
+        "private_key": b64(provider_key.private_bytes(
+            Encoding.Raw, PrivateFormat.Raw, NoEncryption()
+        ))
+    }
+    calls = []
+    actual_limited = compute_worker.run_limited
+
+    def check_limits(kind, params, approved_models, timeout_seconds, max_memory_mb):
+        calls.append((timeout_seconds, max_memory_mb))
+        return actual_limited(kind, params, approved_models, timeout_seconds, max_memory_mb)
+
+    monkeypatch.setattr(compute_worker, "run_limited", check_limits)
+    count = compute_worker.run_once("local", account, height,
+                                    max_wall_seconds=15, max_memory_mb=512)
+    assert count == 1
+    assert calls == [(15, 512)]  # local limits override looser published limits
+    status = c.get(f"/v1/compute/jobs/{job_height}").json()
+    assert status["status"] == "completed_unverified"
+    task = _signed_read(c, client_key, client,
+                        f"/v1/compute/jobs/{job_height}/private")
+    assert task.status_code == 200
+    assert task.json()["result"] == compute_worker.calculate(
+        "hash_chain", {"text": "test signed CPU", "rounds": 64}
+    )
