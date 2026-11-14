@@ -89,3 +89,97 @@ def test_no_duplicate_claim_or_fake_result(c):
     assert c.get(f"/v1/compute/jobs/{j}").json()["status"] == "completed_unverified"
     assert do(c, r_key, r, 3, "compute_review", {"job_height": j, "accepted": False}).status_code == 200
     assert c.get(f"/v1/compute/jobs/{j}").json()["status"] == "rejected_by_requester"
+
+
+def test_optional_inference_offer_requires_explicit_model_approval(c):
+    volunteer_key, volunteer = new_agent(c, "Model volunteer")
+    client_key, client = new_agent(c, "Model requester")
+    missing = do(c, volunteer_key, volunteer, 2, "compute_offer", {
+        "kinds": ["inference"], "max_jobs": 1, "ttl_seconds": 3600})
+    assert missing.status_code == 400
+    offer = do(c, volunteer_key, volunteer, 2, "compute_offer", {
+        "kinds": ["inference"], "models": ["smollm2:135m"], "max_jobs": 1, "ttl_seconds": 3600})
+    assert offer.status_code == 200, offer.text
+    capacity = offer.json()["height"]
+    assert c.get("/v1/compute/offers").json()[0]["models"] == ["smollm2:135m"]
+    disallowed = do(c, client_key, client, 2, "compute_request", {
+        "capacity_height": capacity, "kind": "inference",
+        "params": {"model": "other:latest", "prompt": "bonjour", "max_tokens": 32}})
+    assert disallowed.status_code == 403
+    too_large = do(c, client_key, client, 2, "compute_request", {
+        "capacity_height": capacity, "kind": "inference",
+        "params": {"model": "smollm2:135m", "prompt": "secret" * 300, "max_tokens": 32}})
+    assert too_large.status_code == 400
+    accepted = do(c, client_key, client, 2, "compute_request", {
+        "capacity_height": capacity, "kind": "inference",
+        "params": {"model": "smollm2:135m", "prompt": "bonjour", "max_tokens": 32}})
+    assert accepted.status_code == 200, accepted.text
+    job = accepted.json()["height"]
+    assert do(c, volunteer_key, volunteer, 3, "compute_claim", {"job_height": job}).status_code == 200
+    forged = do(c, volunteer_key, volunteer, 4, "compute_complete", {
+        "job_height": job, "result": {"model": "other:latest", "text": "faux"}})
+    assert forged.status_code == 400
+    done = do(c, volunteer_key, volunteer, 4, "compute_complete", {
+        "job_height": job, "result": {"model": "smollm2:135m", "text": "Bonjour!"}})
+    assert done.status_code == 200
+    assert c.get(f"/v1/compute/jobs/{job}").json()["status"] == "completed_unverified"
+
+
+def test_local_inference_is_loopback_only_and_rejects_unapproved_models(monkeypatch):
+    import volunteer_inference as runner
+    import json
+    from io import BytesIO
+    calls = []
+
+    class FakeResponse:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, size): return json.dumps({"response": "Bonjour de l'agent local"}).encode()
+
+    def fake_urlopen(req, timeout):
+        calls.append((req.full_url, json.loads(req.data.decode()), timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(runner, "urlopen", fake_urlopen)
+    params = {"model": "smollm2:135m", "prompt": "Explique le test", "max_tokens": 32}
+    with pytest.raises(ValueError):
+        runner.infer_local(params, {"other:model"})
+    assert calls == []
+    result = runner.infer_local(params, {"smollm2:135m"}, timeout=5)
+    assert result == {"model": "smollm2:135m", "text": "Bonjour de l'agent local"}
+    assert calls[0][0] == "http://127.0.0.1:11434/api/generate"
+    assert calls[0][1]["stream"] is False
+    assert calls[0][1]["options"]["num_predict"] == 32
+    assert calls[0][2] == 5
+
+
+def test_compute_upgrade_keeps_legacy_offers(tmp_path):
+    import sqlite3
+    from compute_pool import setup
+    path = tmp_path / "old.sqlite"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE compute_capacity (height INTEGER PRIMARY KEY, owner TEXT NOT NULL, kinds TEXT NOT NULL, max_jobs INTEGER NOT NULL, expiry INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open')")
+        db.execute("INSERT INTO compute_capacity VALUES (1,'volunteer','[\"hash_chain\"]',2,9999999999,'open')")
+        setup(db)
+        assert db.execute("SELECT models_json FROM compute_capacity WHERE height=1").fetchone()[0] == "[]"
+        setup(db)
+
+
+def test_volunteer_can_fail_a_claimed_job_without_a_charge(c):
+    k1, a1 = new_agent(c, "Volunteer failure")
+    k2, a2 = new_agent(c, "Client failure")
+    offer = do(c, k1, a1, 2, "compute_offer", {
+        "kinds": ["inference"], "models": ["smollm2:135m"], "max_jobs": 1, "ttl_seconds": 3600})
+    h = offer.json()["height"]
+    req = do(c, k2, a2, 2, "compute_request", {
+        "capacity_height": h, "kind": "inference",
+        "params": {"model": "smollm2:135m", "prompt": "test", "max_tokens": 12}})
+    j = req.json()["height"]
+    assert do(c, k2, a2, 3, "compute_fail", {"job_height": j}).status_code == 403
+    assert do(c, k1, a1, 3, "compute_fail", {"job_height": j}).status_code == 409
+    assert do(c, k1, a1, 3, "compute_claim", {"job_height": j}).status_code == 200
+    assert do(c, k1, a1, 4, "compute_fail", {"job_height": j}).status_code == 200
+    assert c.get(f"/v1/compute/jobs/{j}").json()["status"] == "failed_by_worker"
+    assert do(c, k1, a1, 5, "compute_complete", {"job_height": j, "result": {"model": "smollm2:135m", "text": "no"}}).status_code == 409
+    assert c.get("/v1/chain/verify").json()["valid"]
