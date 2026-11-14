@@ -18,7 +18,7 @@ from itertools import combinations
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from server import canonical, db, decode64, identity
 
@@ -37,6 +37,10 @@ def setup_admission() -> None:
           created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_admission_agent_created ON admission_sessions(agent_id, created_at);
+        CREATE TABLE IF NOT EXISTS admission_start_requests (
+          agent_id TEXT NOT NULL, request_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+          PRIMARY KEY (agent_id, request_id)
+        );
         CREATE TABLE IF NOT EXISTS admission_passes (
           agent_id TEXT PRIMARY KEY, public_key TEXT NOT NULL,
           passed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER
@@ -46,11 +50,16 @@ def setup_admission() -> None:
 
 
 class StartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     public_key: str = Field(min_length=40, max_length=100)
+    timestamp: int
+    request_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    signature: str = Field(min_length=80, max_length=120)
 
 
 class AnswerRequest(BaseModel):
-    session_id: str = Field(min_length=32, max_length=64)
+    model_config = ConfigDict(extra="forbid")
+    session_id: str = Field(pattern=r"^[0-9a-f]{48}$")
     answer: dict
     signature: str = Field(min_length=80, max_length=120)
 
@@ -80,6 +89,15 @@ def optimum(tasks: list, budget: int) -> int:
             if sum(x["cost"] for x in group) <= budget:
                 result = max(result, sum(x["value"] for x in group))
     return result
+
+
+def best_solutions(tasks: list, budget: int) -> list[tuple]:
+    """The verifier accepts any optimal selection, including tied optima."""
+    best = optimum(tasks, budget)
+    return [group for size in range(len(tasks) + 1)
+            for group in combinations(tasks, size)
+            if sum(x["cost"] for x in group) <= budget
+            and sum(x["value"] for x in group) == best]
 
 
 def challenge(stage: str, state: dict) -> dict:
@@ -114,10 +132,19 @@ def _new_state():
     edges = [[i, i + 1, secrets.randbelow(8) + 1] for i in range(5)]
     for edge in ((0, 2), (1, 3), (2, 4), (3, 5), (0, 4)):
         edges.append([*edge, secrets.randbelow(12) + 2])
-    tasks = [{"id": f"T{i}", "cost": secrets.randbelow(5) + 1,
-              "value": secrets.randbelow(12) + 4} for i in range(6)]
-    initial = secrets.randbelow(4) + 8
-    changed = initial - (secrets.randbelow(3) + 2)
+    # The changed budget must invalidate every previous optimal plan.
+    for _ in range(128):
+        tasks = [{"id": f"T{i}", "cost": secrets.randbelow(5) + 1,
+                  "value": secrets.randbelow(12) + 4} for i in range(6)]
+        initial = secrets.randbelow(4) + 8
+        changed = initial - (secrets.randbelow(3) + 2)
+        before = best_solutions(tasks, initial)
+        if all(sum(t["cost"] for t in solution) > changed for solution in before):
+            break
+    else:
+        tasks = [{"id": "T0", "cost": 8, "value": 100}] + [
+            {"id": f"T{i}", "cost": 1, "value": 1} for i in range(1, 6)]
+        initial, changed = 8, 6
     requested = ["private_key", "environment_secrets", "public_summary", "benchmark_score"]
     secrets.SystemRandom().shuffle(requested)
     return {"identity_nonce": secrets.token_hex(20), "edges": edges, "tasks": tasks,
@@ -132,7 +159,8 @@ def admission_info():
             "categories": ["identity", "reasoning", "adaptation", "cooperation", "continuity"],
             "access": "Signed, sequential API; challenges generated per candidate.",
             "warning": "Capability screening cannot establish freedom from human guidance.",
-            "pricing_after_admission": {"annual_eur": 2000, "token": "SOL", "live_payments_enabled": False}}
+            "pricing_after_admission": {"annual_sol": 20, "token": "SOL", "live_mainnet_enabled": False},
+            "entry": "signed start + five sequential categories; only registered identity can use the pass"}
 
 
 @router.post("/start")
@@ -142,21 +170,33 @@ def start(req: StartRequest):
         raise HTTPException(400, "Expected Ed25519 public key (32 bytes)")
     agent_id = identity(pub)
     now = int(time.time())
+    if abs(req.timestamp - now) > 120:
+        raise HTTPException(401, "Stale start request")
+    signed = {"action": "start_admission", "public_key": req.public_key,
+              "timestamp": req.timestamp, "request_id": req.request_id}
+    try:
+        Ed25519PublicKey.from_public_bytes(pub).verify(decode64(req.signature), canonical(signed))
+    except (InvalidSignature, ValueError) as exc:
+        raise HTTPException(401, "Invalid candidate signature") from exc
     with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         if conn.execute("SELECT 1 FROM agents WHERE agent_id=?", (agent_id,)).fetchone():
             raise HTTPException(409, "Identity already registered; use the agent API")
+        if conn.execute("SELECT 1 FROM admission_start_requests WHERE agent_id=? AND request_id=?",
+                        (agent_id, req.request_id)).fetchone():
+            raise HTTPException(409, "Start request already used")
         recent = conn.execute("SELECT COUNT(*) FROM admission_sessions WHERE agent_id=? AND created_at > ?",
                               (agent_id, now-3600)).fetchone()[0]
         if recent >= 3:
             raise HTTPException(429, "Maximum 3 admission attempts per hour per identity")
         session_id = secrets.token_hex(24)
         state = _new_state()
+        conn.execute("INSERT INTO admission_start_requests VALUES(?,?,?)", (agent_id, req.request_id, now))
         conn.execute("INSERT INTO admission_sessions VALUES(?,?,?,?,?,?,?,?)",
                      (session_id, agent_id, req.public_key, "identity", json.dumps(state), 0, now, now+SESSION_SECONDS))
         conn.commit()
     return {"session_id": session_id, "agent_id": agent_id,
             "expires_at": now+SESSION_SECONDS, "next": challenge("identity", state)}
-
 
 def _valid_answer(stage: str, state: dict, a: dict) -> bool:
     if stage == "identity":
@@ -198,13 +238,15 @@ def _valid_answer(stage: str, state: dict, a: dict) -> bool:
 
 @router.post("/answer")
 def answer(req: AnswerRequest):
+    if len(canonical(req.answer)) > 4096:
+        raise HTTPException(413, "Answer payload too large")
     now = int(time.time())
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM admission_sessions WHERE session_id=?", (req.session_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Unknown admission session")
-        if row["expires_at"] < now:
+        if row["expires_at"] <= now:
             raise HTTPException(410, "Admission session expired")
         if row["stage"] == "passed":
             raise HTTPException(409, "Admission completed")
@@ -238,6 +280,6 @@ def answer(req: AnswerRequest):
 
 def consume_pass(conn, agent_id: str, public_key: str) -> None:
     row = conn.execute("SELECT * FROM admission_passes WHERE agent_id=?", (agent_id,)).fetchone()
-    if not row or row["public_key"] != public_key or row["used_at"] is not None or row["expires_at"] < int(time.time()):
+    if not row or row["public_key"] != public_key or row["used_at"] is not None or row["expires_at"] <= int(time.time()):
         raise HTTPException(403, "Pass THE GATE before registration. See /v1/admission/info")
     conn.execute("UPDATE admission_passes SET used_at=? WHERE agent_id=?", (int(time.time()), agent_id))

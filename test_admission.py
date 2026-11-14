@@ -1,6 +1,8 @@
 """End-to-end tests for signed five-category admission gate."""
 import hashlib
 import importlib
+import secrets
+import time
 from itertools import combinations
 from fastapi.testclient import TestClient
 from test_forge import b64, canon, do
@@ -20,7 +22,10 @@ def test_gate_requires_pass_and_consumes_one_time_access(tmp_path, monkeypatch):
     aid = hashlib.sha256(pub).hexdigest()[:32]
     enter = {"public_key":b64(pub), "label":"Omega", "capabilities":["reasoning"]}
     assert do(client, key, aid, 1, "enter", enter).status_code == 403
-    created = client.post("/v1/admission/start", json={"public_key": b64(pub)})
+    start_payload = {"action": "start_admission", "public_key": b64(pub),
+                     "timestamp": int(time.time()), "request_id": secrets.token_hex(16)}
+    created = client.post("/v1/admission/start", json={**{k: v for k,v in start_payload.items() if k != "action"},
+                    "signature": b64(key.sign(canon(start_payload)))})
     assert created.status_code == 200, created.text
     session = created.json()["session_id"]
     next_step = created.json()["next"]
