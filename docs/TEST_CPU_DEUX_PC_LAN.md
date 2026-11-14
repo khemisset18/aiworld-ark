@@ -1,14 +1,20 @@
 # AI WORLD — Test CPU entre deux vrais PC (réseau local privé)
 
-**Statut : prêt à exécuter, PAS ENCORE VALIDÉ sur deux PC physiques.**
-Le premier cycle signé entre deux agents **sur un seul PC WSL2** a déjà réussi
-(voir [résultats locaux](RESULTATS_PILOTE_CPU_LOCAL_2026-11-14.md)).
-Cette procédure permet de passer à deux machines physiques indépendantes.
+**Statut : EXÉCUTÉ AVEC SUCCÈS sur deux PC physiques le 14 novembre 2026.**
+Le premier cycle signé **sur un seul PC WSL2** avait déjà réussi
+([résultats locaux](RESULTATS_PILOTE_CPU_LOCAL_2026-11-14.md)).
+Un **deuxième jalon, entre deux ordinateurs différents**, est désormais attesté
+par les journaux des deux machines : **offre 12, tâche 14, calcul CPU sur PC2,
+résultat 690, revue signée et vérifiée sur PC1**.
+Lire le [rapport du premier échange CPU inter-PC](RESULTATS_PILOTE_CPU_DEUX_PC_2026-11-14.md).
+
+La procédure ci-dessous permet de le reproduire avec une nouvelle offre et une
+nouvelle tâche ; ne réutilise pas les numéros 12 et 14 déjà consommés.
 
 **Matériel :**
 - **PC1 :** le PC Windows/Ubuntu WSL2 déjà configuré. Il héberge le coordinateur
   AI WORLD et le **demandeur**.
-- **PC2 :** un autre ordinateur **physique** sous Ubuntu/Linux ou Windows + Ubuntu WSL2.
+- **PC2 :** un autre ordinateur **physique** sous Ubuntu/Linux ou Windows + Ubuntu WSL1/WSL2 (validé sur HP ProBook, WSL1).
   Il héberge le **volontaire CPU** et fait le calcul lui-même.
 - Les deux PC doivent être **sur le même réseau privé de confiance** (même
   routeur/Wi-Fi domestique, sans isolation Wi-Fi « invité »). Aucune redirection
@@ -112,9 +118,19 @@ wsl -l -v
 wsl -d Ubuntu
 ```
 
-Si Ubuntu n'existe pas, son installation WSL2 nécessite PowerShell
-administrateur, `wsl --install -d Ubuntu` et éventuellement un redémarrage.
-Sur un PC2 sous Linux natif, utiliser directement son terminal.
+**Alternative validée : WSL1 sur PC2.** Si la session interactive WSL1 se
+bloque, exécuter une commande ponctuelle depuis PowerShell Windows sans
+ouvrir de terminal interactif :
+
+```powershell
+wsl -d Ubuntu --exec bash -c "cd ~/aiworld-ark && .venv/bin/python -m pytest -q"
+```
+
+Ne pas réinstaller Ubuntu, Git ou Python si les 58 tests réussissent déjà.
+Si Ubuntu est absent, l'installer suivant les prérequis de la machine.
+Le matériel ancien sans virtualisation active peut nécessiter WSL1 plutôt
+que WSL2, comme le pilote PC2 documenté.
+Sur Linux natif, utiliser directement son terminal.
 
 **Dans le terminal Ubuntu du PC2 :**
 
@@ -153,6 +169,13 @@ Toujours sur **PC2**, lancer :
 
 ```bash
 python essai_reseau_cpu.py volontaire --server http://IP_PC1:8000
+```
+
+**Sous Windows avec WSL1 et PowerShell**, version équivalente déjà utilisée
+sur le HP ProBook (en remplaçant `IP_PC1`) :
+
+```powershell
+wsl -d Ubuntu --exec bash -c "cd ~/aiworld-ark && .venv/bin/python -u essai_reseau_cpu.py volontaire --server http://IP_PC1:8000 --wait-seconds 480"
 ```
 
 Le script crée **localement sur PC2** `~/.aiworld-2pc/volontaire.json`,
