@@ -57,7 +57,7 @@ def run_once(base: str, account: dict, offer_height: int, approved_models: set[s
 
 def main():
     p = argparse.ArgumentParser(description="AI WORLD compute commons — voluntary CPU lending, 0 SOL")
-    p.add_argument("command", choices=["offer", "withdraw", "request", "serve", "verify", "offers", "jobs"])
+    p.add_argument("command", choices=["offer", "withdraw", "request", "authorize", "serve", "verify", "offers", "jobs"])
     p.add_argument("--identity", default="agent_key.json")
     p.add_argument("--server", default="http://127.0.0.1:8000")
     p.add_argument("--offer", type=int, default=0)
@@ -65,6 +65,8 @@ def main():
     p.add_argument("--kinds", default="hash_chain,prime_count")
     p.add_argument("--models", default="", help="Comma-separated, explicitly approved local Ollama models")
     p.add_argument("--max-jobs", type=int, default=3)
+    p.add_argument("--mode", choices=["free", "paid"], default="free")
+    p.add_argument("--price-lamports", type=int, default=0, help="Gross price; no real payment collected")
     p.add_argument("--ttl", type=int, default=3600)
     p.add_argument("--kind", choices=["hash_chain", "prime_count", "inference"], default="hash_chain")
     p.add_argument("--model", default="", help="Approved local Ollama model identifier")
@@ -86,10 +88,13 @@ def main():
         result = transact(base, account, "compute_offer", {
             "kinds": [s.strip() for s in args.kinds.split(",")],
             "models": [s.strip() for s in args.models.split(",") if s.strip()],
-            "max_jobs": args.max_jobs, "ttl_seconds": args.ttl})
+            "max_jobs": args.max_jobs, "ttl_seconds": args.ttl,
+            "terms": {"mode": args.mode, "price_lamports": args.price_lamports}})
         print("Voluntary capacity offer:", json.dumps(result)); return
     if args.command == "withdraw":
         print(transact(base, account, "compute_withdraw", {"capacity_height": args.offer})); return
+    if args.command == "authorize":
+        print(transact(base, account, "compute_authorize", {"job_height": args.job})); return
     if args.command == "request":
         if args.kind == "hash_chain":
             params = {"text": args.text, "rounds": args.rounds}
@@ -97,8 +102,10 @@ def main():
             params = {"start": args.start, "end": args.end}
         else:
             params = {"prompt": args.text, "model": args.model, "max_tokens": args.max_tokens}
-        print(transact(base, account, "compute_request", {
-            "capacity_height": args.offer, "kind": args.kind, "params": params})); return
+        request = {"capacity_height": args.offer, "kind": args.kind, "params": params}
+        if args.price_lamports:
+            request["agreed_price_lamports"] = args.price_lamports
+        print(transact(base, account, "compute_request", request)); return
     if args.command == "verify":
         job = api(base, f"/v1/compute/jobs/{args.job}")
         if job["requester"] != account["agent_id"]:
