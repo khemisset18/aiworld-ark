@@ -10,14 +10,17 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import secrets
 import tempfile
 import time
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.exceptions import InvalidSignature
 
 from ark import (
     MAX_CAPSULE_BYTES, b64, canonical, identity_from_file, load_capsule,
@@ -65,6 +68,8 @@ def client_for(transport=None):
 
 
 def get_capsule(client: httpx.Client, peer: dict, agent_id: str, digest: str) -> dict:
+    if re.fullmatch(r"[0-9a-f]{32}", agent_id) is None or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError("Invalid capsule locator")
     url = peer["url"] + "/v1/storage/capsules/" + agent_id + "/" + digest
     with client.stream("GET", url, headers=bearer(peer)) as response:
         response.raise_for_status()
@@ -148,6 +153,8 @@ def restore_latest(identity_path: Path, output: Path, peers: list[dict],
                    transport=None) -> dict:
     if output.exists() and not force:
         raise FileExistsError("Output already exists, use --force to overwrite")
+    if digest is not None and re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError("Invalid requested capsule digest")
     identity = identity_from_file(identity_path)
     agent_id = identity["agent_id"]
     options, failures = {}, []
@@ -163,7 +170,7 @@ def restore_latest(identity_path: Path, output: Path, peers: list[dict],
                     raise ValueError("Invalid miner listing")
                 for item in entries[:100]:
                     cid = item.get("digest", "")
-                    if not isinstance(cid, str) or len(cid) != 64:
+                    if not isinstance(cid, str) or re.fullmatch(r"[0-9a-f]{64}", cid) is None:
                         continue
                     if digest is not None and cid != digest:
                         continue
@@ -171,10 +178,12 @@ def restore_latest(identity_path: Path, output: Path, peers: list[dict],
                     if type(created) is not int:
                         continue
                     existing = options.get(cid)
-                    if existing is None or created > existing["created"]:
+                    if existing is None:
                         options[cid] = {"created": created, "peers": [peer]}
-                    elif peer not in existing["peers"]:
-                        existing["peers"].append(peer)
+                    else:
+                        existing["created"] = max(existing["created"], created)
+                        if peer not in existing["peers"]:
+                            existing["peers"].append(peer)
             except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
                 failures.append({"url": peer["url"], "error": type(exc).__name__})
 
@@ -189,7 +198,7 @@ def restore_latest(identity_path: Path, output: Path, peers: list[dict],
                     return {"restored": True, "agent_id": agent_id,
                             "capsule_sha256": cid, "bytes": len(plaintext),
                             "source": peer["url"], "failed_peers": failures}
-                except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                except (httpx.HTTPError, ValueError, KeyError, TypeError, InvalidSignature) as exc:
                     failures.append({"url": peer["url"], "error": type(exc).__name__})
     raise RuntimeError("No independently verifiable ARK capsule could be restored")
 
@@ -223,6 +232,48 @@ def audit(identity_path: Path, local_capsule: Path, peers: list[dict], transport
             "checks": audits, "continuous_storage_proven": False}
 
 
+def verify_manifest(path: Path) -> dict:
+    """Check an agent-signed, token-free receipt; this does not prove miner uptime."""
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(doc, dict) or doc.get("format") != "AIWORLD-ARK-MINER-MANIFEST-1":
+        raise ValueError("Invalid ARK storage manifest")
+    pub = un64(doc["public_key"])
+    if hashlib.sha256(pub).hexdigest()[:32] != doc["agent_id"]:
+        raise ValueError("Manifest signing identity does not match agent")
+    signature = un64(doc["signature"])
+    unsigned = dict(doc)
+    unsigned.pop("signature")
+    Ed25519PublicKey.from_public_bytes(pub).verify(signature, canonical(unsigned))
+    return doc
+
+
+def watch_state(identity_path: Path, state_path: Path, peers: list[dict],
+                min_copies: int = 2, interval: int = 60, once: bool = False,
+                manifest_dir: Path | None = None, transport=None) -> None:
+    """Encrypt and replicate only when state changes. Failures retry next cycle."""
+    if interval < 5:
+        raise ValueError("Watch interval must be at least 5 seconds")
+    last_successful_hash = None
+    while True:
+        try:
+            state_hash = hashlib.sha256(state_path.read_bytes()).hexdigest()
+            if state_hash != last_successful_hash:
+                destination = None
+                if manifest_dir is not None:
+                    destination = manifest_dir / (str(int(time.time() * 1000)) + "-" + state_hash[:12] + ".manifest.json")
+                result = backup(identity_path, state_path, peers, min_copies,
+                                destination, transport)
+                last_successful_hash = state_hash
+                print(json.dumps({"event": "replicated", "digest": result["capsule_sha256"],
+                                  "copies": len(result["replicas"])}, ensure_ascii=False), flush=True)
+        except (OSError, ValueError, RuntimeError, httpx.HTTPError) as exc:
+            print(json.dumps({"event": "backup_failed", "error": type(exc).__name__}),
+                  file=sys.stderr, flush=True)
+        if once:
+            return
+        time.sleep(interval)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="AI WORLD encrypted remote miner network pilot")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -242,8 +293,20 @@ def main() -> None:
     challenge.add_argument("--identity", required=True, type=Path)
     challenge.add_argument("--capsule", required=True, type=Path)
     challenge.add_argument("--peers", required=True, type=Path)
+    continuous = sub.add_parser("watch")
+    continuous.add_argument("--identity", required=True, type=Path)
+    continuous.add_argument("--state", required=True, type=Path)
+    continuous.add_argument("--peers", required=True, type=Path)
+    continuous.add_argument("--min-copies", type=int, default=2)
+    continuous.add_argument("--interval", type=int, default=60)
+    continuous.add_argument("--manifest-dir", type=Path)
+    continuous.add_argument("--once", action="store_true")
     args = parser.parse_args()
     peers = read_peers(args.peers)
+    if args.command == "watch":
+        watch_state(args.identity, args.state, peers, args.min_copies,
+                    args.interval, args.once, args.manifest_dir)
+        return
     if args.command == "backup":
         report = backup(args.identity, args.state, peers, args.min_copies, args.manifest)
     elif args.command == "restore":
