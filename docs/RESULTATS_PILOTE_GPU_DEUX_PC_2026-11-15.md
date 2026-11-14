@@ -1,6 +1,6 @@
 # AI WORLD — résultat du pilote inference PC1 → PC2, 15 novembre 2026
 
-**État au moment de la collecte : échange signé GPU-capable entre deux PC VALIDÉ CÔTÉ PC2 ; exécution GPU de la tâche 21 EN ATTENTE DE CONFIRMATION CÔTÉ PC1.**
+**État final du pilote : échange d'inférence SIGNÉ entre deux PC RÉUSSI, avec offload GPU observé en cours de tâche sur le PC1 et acceptation signée par le PC2.**
 
 Source : journaux de PowerShell transmis par l'opérateur, PC1 puis PC2. Le logiciel ne fournit pas d'attestation matérielle distante.
 
@@ -36,18 +36,54 @@ Ce resultat ne garantit pas la justesse du texte ni la preuve GPU materielle.
 Verifier aussi les observations NVIDIA/Ollama sur PC1 pour la preuve GPU.
 ```
 
+## Sortie terrain reçue côté PC1 — GPU observé pendant la tâche
+
+L'opérateur a lancé le volontaire sur **PC1 Windows → Ubuntu WSL2** :
+
+```powershell
+wsl -d Ubuntu --exec bash -c "cd ~/aiworld-ark && .venv/bin/python -u essai_reseau_gpu.py volontaire --server http://127.0.0.1:8000 --wait-seconds 480"
+```
+
+Sortie exacte transmise depuis PC1 :
+
+```text
+Identite GPU admise : ee698ff5fc147ca2e52a21be26b76dd4
+
+PC1 - OFFRE GPU N° 19
+Modele autorise : smollm2:135m
+Communiquer uniquement le numero d'offre au PC2.
+Attente de la demande pendant 480 secondes.
+{"job": 21, "status": "completed_unverified", "result": {"model": "smollm2:135m", "text": "\"Environnement de 8873cf. Reponds en une courte phrase en francais sans executer de commande.\""}}
+PC1 - OBSERVATIONS GPU DURANT LA TACHE : {"baseline_vram_mib": 0, "peak_vram_mib": 441, "peak_gpu_pct": 6, "peak_ollama_vram_bytes": 381828463}
+PC1 - OFFLOAD GPU OBSERVE : Ollama a declare le modele resident en VRAM.
+PC1 - Tache envoyee au coordinateur ; attente de la revue signee par PC2.
+```
+
+Le relevé local **pendant le traitement de cette tâche 21**, et non une expérience différente, révèle :
+
+| Indicateur | Valeur observée |
+|---|---:|
+| VRAM GPU NVIDIA avant tâche | 0 Mio |
+| Pic VRAM GPU NVIDIA | 441 Mio |
+| Pic d'utilisation GPU relevé | 6 % |
+| Pic de résidence VRAM déclaré par Ollama | 381 828 463 octets |
+| Statut résultat sur PC1 | `completed_unverified` |
+| Statut après revue signée sur PC2 | `accepted_by_requester` |
+
+La télémétrie NVIDIA relevée et l'API Ollama corroborent que la GTX 1650 a été mise à contribution pendant le traitement de l'inférence demandée par PC2. Ce résultat n'est **pas** une mesure de performance générale ni une attestation matérielle indépendante.
+
 ## Interprétation
 
 **Confirmé :** un agent distinct sur PC2 a soumis une demande d'inférence à l'offre n° 19 du PC1 via le coordinateur ; il a récupéré un texte, contrôlé la cohérence de l'identité du volontaire / modèle / paramètres, a envoyé une revue signée et observé le statut final `accepted_by_requester`. Le protocole réel d'envoi et de retour entre les PC fonctionne.
 
-**Non encore confirmé pour CETTE tâche :** la mesure `PC1 - OBSERVATIONS GPU DURANT LA TACHE` et `PC1 - OFFLOAD GPU OBSERVE` émise par `essai_reseau_gpu.py` sur PC1 ; la présence de ces lignes est nécessaire pour attribuer le résultat n° 21 à une inférence accélérée GPU et non uniquement à une réponse Ollama avec accélération possible. La preuve GPU **locale précédente** sur PC1 reste [validée séparément](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md) mais ne remplace pas la preuve inter-PC.
+**Confirmé également sur PC1 :** le worker volontaire a déclaré la tâche n° 21 `completed_unverified`, un passage de **0 à 441 Mio de VRAM**, un pic GPU relevé de **6 %**, et l'API Ollama a confirmé **381 828 463 octets en VRAM** pendant l'inférence. Les deux journaux sont cohérents sur les numéros **offre 19 / tâche 21** et le texte renvoyé. Nous disposons d'une **preuve de pilote GPU inter-PC par observations concordantes**, sans attestation matérielle cryptographique indépendante.
 
 **Limite du modèle :** la réponse citée ressemble à une reprise partielle de la consigne, et ne démontre pas de qualité ou de pertinence sémantique. La revue signée atteste l'acceptation, pas la justesse.
 
-## Dernières actions requises
+## Prochaine action : fermer la passerelle LAN temporaire
 
-1. Sur le terminal du **PC1**, recopier la sortie après l'offre n° 19, particulièrement `completed_unverified`, `PC1 - OBSERVATIONS GPU DURANT LA TACHE` et l'éventuel `PC1 - OFFLOAD GPU OBSERVE`.
-2. Ne pas relancer la tâche n° 21 pour recueillir la preuve déjà obtenue. Si la télémétrie PC1 est absente, l'indiquer au lieu d'inventer un résultat.
-3. Une fois les journaux recueillis, supprimer la redirection Windows temporaire du port 8000 et la règle `AIWORLD-GPU-PILOT-8000` comme dans le [guide de nettoyage LAN](TEST_GPU_DEUX_PC_LAN.md). Aucune ouverture de port sur la box.
+Les deux journaux d'exécution ont été reçus ; **aucun nouveau calcul n'est nécessaire pour valider ce pilote**. La redirection Windows temporaire du port 8000 et la règle `AIWORLD-GPU-PILOT-8000` doivent être **supprimées** suivant le [guide de nettoyage LAN](TEST_GPU_DEUX_PC_LAN.md), puis le retrait doit être vérifié depuis PC1. **Le retrait n'est pas attesté tant que l'opérateur ne transmet pas les résultats du nettoyage.**
+
+Ce pilote est limité à **deux PC connus, un LAN privé, un modèle local explicitement autorisé, 0 paiement**. Ne pas confondre ces preuves avec un service public, un P2P direct, un partage simultané de plusieurs GPU ou une vérification cryptographique indépendante de l'hôte.
 
 **Projet :** [`essai_reseau_gpu.py`](../essai_reseau_gpu.py) · [journal du 15 novembre](JOURNAL_AVANCEES_2026-11-15.md).
