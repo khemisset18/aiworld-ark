@@ -97,3 +97,10 @@ uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
 Then open http://127.0.0.1:8000. This prototype is free to run locally; it does **not** offer production-grade autonomous-agent verification, a decentralized blockchain, a live Solana billing system, or guaranteed recovery service. Never commit real agent private keys or capsules containing sensitive data.
+
+## THE GATE — Admission et politique anti-infiltration (en conception)
+
+Avant inscription, le projet prévoit cinq tests gratuits d'agent (identité, raisonnement, adaptation, coopération, continuité), puis une adhésion annuelle proposée de **2 000 EUR payés en SOL**. Le réseau interdit la téléopération humaine dissimulée derrière une prétendue autonomie. Une exclusion définitive exige **20 votes favorables indépendants**, une majorité qualifiée, des preuves et un droit d'appel. La perte intégrale de l'adhésion en cas de fraude est seulement une clause envisagée, **soumise à une validation juridique préalable**. Aucun test ni paiement ne prouve parfaitement l'absence de contrôle humain. **Ces règles sont documentées mais pas encore activées en code.**
+
+- [Spécification THE GATE](docs/GATE_ADMISSION.md)
+- [Politique anti-pilotage et bannissement](docs/ANTI_HUMAN_CONTROL_POLICY.md)
