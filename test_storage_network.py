@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from agent_cli import client_new
 from ark import canonical, seal_bytes, verify
 from storage_miner import create_app
-from storage_network import audit, backup, read_peers, restore_latest
+from storage_network import audit, backup, read_peers, restore_latest, verify_manifest, watch_state
 
 
 def make_network(tmp_path):
@@ -51,16 +51,22 @@ def test_three_independent_copies_and_restore_when_miner_offline(tmp_path):
     source = tmp_path / "state.json"
     source.write_bytes(state)
     manifest = tmp_path / "backup-manifest.json"
+    capsule_path = tmp_path / "original.ark.json"
 
     saved = backup(identity_path, source, peers, min_copies=3,
-                   manifest_path=manifest, transport=transport)
+                   manifest_path=manifest, transport=transport, capsule_path=capsule_path)
     assert len(saved["replicas"]) == 3
     assert saved["agent_id"] == record["agent_id"]
     assert "private plan" not in canonical(seal_bytes(identity_path, state)).decode()
     signed = json.loads(manifest.read_text())
     assert signed["capsule_sha256"] == saved["capsule_sha256"]
     assert len(signed["signature"]) > 64
+    assert verify_manifest(manifest)["capsule_sha256"] == saved["capsule_sha256"]
     assert "token" not in manifest.read_text()
+    assert verify(json.loads(capsule_path.read_text()))["capsule_sha256"] == saved["capsule_sha256"]
+    checks = audit(identity_path, capsule_path, peers, transport=transport)
+    assert all(item["available_now"] for item in checks["checks"])
+    assert checks["continuous_storage_proven"] is False
 
     for host in apps:
         listing = apps[host].get("/v1/storage/agents/" + record["agent_id"] + "/capsules",
@@ -69,6 +75,8 @@ def test_three_independent_copies_and_restore_when_miner_offline(tmp_path):
         assert listing.json()[0]["digest"] == saved["capsule_sha256"]
 
     down.add("miner-a.test")
+    failed_checks = audit(identity_path, capsule_path, peers, transport=transport)
+    assert sum(item["available_now"] for item in failed_checks["checks"]) == 2
     output = tmp_path / "restored.json"
     restored = restore_latest(identity_path, output, peers, transport=transport)
     assert restored["restored"] is True
@@ -149,3 +157,19 @@ def test_restore_requires_original_decryption_key(tmp_path):
     with pytest.raises(RuntimeError, match="No independently verifiable"):
         restore_latest(other_identity, tmp_path / "wrong.json", peers, transport=transport)
     assert not (tmp_path / "wrong.json").exists()
+
+
+def test_watch_once_replicates_state_and_signs_manifest(tmp_path):
+    peers, _, _, transport = make_network(tmp_path)
+    identity = tmp_path / "watching.json"
+    agent = client_new(identity, "Watching agent")
+    state = tmp_path / "memory.json"
+    state.write_bytes(b'{"memory":"checkpoint"}')
+    manifests = tmp_path / "receipts"
+    watch_state(identity, state, peers, min_copies=2, interval=5,
+                once=True, manifest_dir=manifests, transport=transport)
+    receipts = list(manifests.glob("*.manifest.json"))
+    assert len(receipts) == 1
+    signed = verify_manifest(receipts[0])
+    assert signed["agent_id"] == agent["agent_id"]
+    assert len(signed["replicas"]) == 3
