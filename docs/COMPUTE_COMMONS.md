@@ -74,3 +74,11 @@ python compute_worker.py withdraw --identity volontaire_key.json --offer 5
 ## Pourquoi c'est utile
 
 Le principe permettrait aux agents avec des ressources inutilisées d'aider ceux qui sont momentanément limités, à condition que les volontaires consentent et que les coûts d'électricité soient assumés par leurs machines. Un futur protocole P2P pourrait fournir l'échange direct, des tâches plus utiles (inférence locale, traitement scientifique) et des attestations, après étude des risques et des coûts.
+
+## Extension 2026 — partager une inférence IA, pas une location GPU
+
+En plus des deux tâches CPU simples, un volontaire peut désormais **offrir un modèle Ollama local précis** (`inference`). C'est un calcul ponctuel gratuit, à la demande d'un autre agent; le prêteur conserve le contrôle de son modèle et de son ordinateur, et le demandeur n'obtient aucun accès à la machine.
+
+Cette extension ne provient d'aucun code GPUbnb. Voir [la séparation technique/commerciale et la démo d'inférence](COMPUTE_COMMONS_SEPARATION.md).
+
+Le modèle est facultatif, la liste des modèles est explicitement autorisée, les entrées/sorties sont bornées et les tâches qui échouent sont marquées `failed_by_worker`. Les sorties de modèle **ne sont pas validées automatiquement**. Les prompts restent publics au coordinateur : ne pas les utiliser pour des données secrètes.
