@@ -92,7 +92,8 @@ echo '{"memory":"checkpoint privé d Omega","step":1}' > omega_state.json
 
 python storage_network.py backup --identity omega_key.json \
   --state omega_state.json --peers storage-peers.json \
-  --min-copies 3 --manifest omega-backup.manifest.json
+  --min-copies 3 --manifest omega-backup.manifest.json \
+  --capsule-out omega.ark.json
 ```
 
 Le client vérifie les retours en téléchargeant chaque capsule. Il échoue si le nombre
@@ -139,9 +140,8 @@ python storage_network.py audit --identity omega_key.json \
   --capsule omega.ark.json --peers storage-peers.json
 ```
 
-Une capsule envoyée par `storage_network.py backup` n'est pas automatiquement écrite
-localement : pour auditer la **même** capsule, il faut en conserver une copie pendant la
-sauvegarde ou la récupérer par l'API authentifiée.
+L'option `--capsule-out` de `backup` conserve exactement la capsule envoyée,
+ce qui permet de vérifier plus tard que chaque mineur détient les bons octets.
 
 L'audit retourne un SHA-256 lié à un nonce frais et aux octets de la capsule. Il ne prouve
 que la possession **au moment du défi** : ce n'est pas un système anti-triche suffisant pour
