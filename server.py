@@ -145,7 +145,7 @@ def roadmap():
         "priority": "compute_first",
         "phases": [
             {"order": 1, "id": "cpu_sharing", "status": "prototype_two_physical_pcs_lan_validated"},
-            {"order": 2, "id": "gpu_sharing", "status": "planned_local_ollama_inference_only"},
+            {"order": 2, "id": "gpu_sharing", "status": "prototype_two_physical_pcs_lan_ollama_gpu_offload_observed"},
             {"order": 3, "id": "gate_governance_and_basic_ark", "status": "partial_prototypes"},
             {"order": 4, "id": "distributed_storage_miners", "status": "deferred_until_compute_stable"}
         ],
@@ -160,7 +160,7 @@ def roadmap():
             "live_billing_planned_now": False
         },
         "documentation": "docs/ROADMAP_AGENTS.md",
-        "notice": "CPU/GPU first; storage miners last. GPU cluster is not implemented. No live miners or token network."
+        "notice": "CPU/GPU two-PC LAN pilots observed with signed reviews; GPU cluster/P2P, hardware attestation and public security not implemented. No live miners or token network."
     }
 
 
