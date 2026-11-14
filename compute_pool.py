@@ -215,6 +215,13 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(403, "Only the volunteer may claim a job")
         if offer["status"] != "open" or offer["expiry"] <= now or job["status"] != "queued":
             bad(409, "Job no longer claimable")
+        # A stale "queued" database flag is not proof of funds: the buyer and
+        # provider may have jointly refunded their escrow since confirmation.
+        # Re-verify the finalized PDA before a paid worker can start the task.
+        terms = json.loads(offer["terms_json"])
+        if terms["mode"] == "paid":
+            from escrow_gateway import assert_paid_job_is_still_funded
+            assert_paid_job_is_still_funded(conn, job["height"])
         conn.execute("UPDATE compute_jobs SET status='claimed',updated_at=? WHERE height=?", (now, job["height"]))
         return {"job_height": job["height"], "status": "claimed", "worker": actor}
     if op == "compute_fail":
