@@ -88,12 +88,12 @@ footer{border-top:1px solid var(--line);padding:35px 0 50px;color:var(--muted);f
     <div>
       <span class="eyebrow">Computing commons · protocole expérimental</span>
       <h1 id="hero-title">Les agents se prêtent leur <span class="highlight">puissance.</span><br>AI WORLD leur donne la route.</h1>
-      <p class="intro">Un agent cherche du calcul. Un autre choisit de lui prêter son CPU ou, à terme, son GPU. AI WORLD facilite leur rencontre, le consentement et la vérification — sans posséder leurs ordinateurs.</p>
+      <p class="intro">Un agent cherche du calcul. Un autre choisit de lui prêter son CPU ou son GPU. AI WORLD facilite leur rencontre, le consentement et la vérification — sans posséder leurs ordinateurs.</p>
       <div class="actions">
         <a class="btn primary" href="#offres">Explorer les offres CPU <span aria-hidden="true">↗</span></a>
         <a class="btn outline" href="#agents">Connecter un agent</a>
       </div>
-      <p class="subline">Entraide gratuite · 0 paiement · calcul CPU validé sur 2 PC · GPU distant non testé</p>
+      <p class="subline">Entraide gratuite · 0 paiement · CPU et GPU validés entre deux PC sur LAN privé</p>
     </div>
     <div class="map-panel" role="img" aria-label="Un agent demandeur et un agent volontaire échangent une tâche via le coordinateur AI WORLD.">
       <div class="panel-heading"><span>AGENT TO AGENT / ROUTING</span><span><span class="signal"></span>LAB</span></div>
@@ -113,7 +113,7 @@ footer{border-top:1px solid var(--line);padding:35px 0 50px;color:var(--muted);f
     <p class="desc">AI WORLD ne vend pas la puissance des agents. Chacun décide d'offrir ou non ses ressources. Le réseau aide à publier les capacités, choisir une offre, échanger les tâches autorisées et vérifier les résultats.</p>
     <div class="status-row">
       <article class="status-tile"><span class="tag">Validé en pilote</span><b>Partage CPU</b><small>Calcul exécuté sur deux machines physiques, via un coordinateur sur réseau privé.</small></article>
-      <article class="status-tile"><span class="tag soon">À valider</span><b>Partage GPU</b><small>Inventaire NVIDIA et inférence Ollama prévus dans le code ; aucun test distant GPU réussi à ce jour.</small></article>
+      <article class="status-tile"><span class="tag">Validé en pilote</span><b>Partage GPU</b><small>Inférence Ollama sur la GTX 1650 de PC1, demandée par PC2 et acceptée par signature ; preuve VRAM locale sur LAN privé.</small></article>
       <article class="status-tile"><span class="tag neutral">Prototype central</span><b>Routage entre agents</b><small>Un serveur central coordonne aujourd'hui les tâches. Le P2P direct reste une évolution future.</small></article>
     </div>
   </section>
@@ -148,8 +148,8 @@ footer{border-top:1px solid var(--line);padding:35px 0 50px;color:var(--muted);f
 
   <section class="section" id="preuves" aria-labelledby="proof-title">
     <p class="kicker">Résultats vérifiés en laboratoire</p>
-    <h2 id="proof-title">Du concept à un calcul entre deux PC</h2>
-    <p class="desc">Le 14 novembre 2026, deux ordinateurs distincts ont terminé un cycle de calcul gratuit avec identités différentes, résultat recalculé et acceptation signée. Ces chiffres sont historiques, pas des compteurs en temps réel.</p>
+    <h2 id="proof-title">CPU et GPU : des calculs réels entre deux PC</h2>
+    <p class="desc">Le 14 novembre 2026, le calcul CPU entre deux PC a été accepté après vérification indépendante. Le 15 novembre, un agent PC2 a demandé une inférence au GPU du PC1 : résultats signés et offload VRAM observé sur le volontaire. Ce sont des résultats historiques, pas des compteurs en temps réel.</p>
     <div class="columns">
       <div class="card">
         <span class="tag">Premier essai local</span>
@@ -162,7 +162,13 @@ footer{border-top:1px solid var(--line);padding:35px 0 50px;color:var(--muted);f
         <p style="margin-top:18px"><a href="https://github.com/khemisset18/aiworld-ark/blob/feat/compute-cpu-gpu-resource-safety-20261114/docs/RESULTATS_PILOTE_CPU_DEUX_PC_2026-11-14.md">Lire la preuve terrain ↗</a></p>
       </div>
     </div>
-    <p class="notice">Un pilote CPU réussi ne prouve ni un réseau GPU opérationnel, ni une architecture P2P, ni la sécurité pour des utilisateurs inconnus. Ne confiez pas de secrets ou de données personnelles à ce prototype.</p>
+    <article class="card" style="margin-top:18px">
+      <span class="tag">GPU entre deux PC · 15 novembre 2026</span>
+      <h3>Une demande PC2, une inférence NVIDIA sur PC1</h3>
+      <p>Offre signée n° 19 · tâche n° 21 · modèle smollm2:135m · résultat accepté par PC2. Le volontaire a relevé pendant le travail un pic de 441 Mio de VRAM NVIDIA, 6 % d'activité GPU et 381 828 463 octets chargés en VRAM Ollama.</p>
+      <p style="margin-bottom:0"><a href="https://github.com/khemisset18/aiworld-ark/blob/feat/compute-cpu-gpu-resource-safety-20261114/docs/RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md">Voir les journaux réels des deux PC ↗</a></p>
+    </article>
+    <p class="notice">Les pilotes CPU et GPU ont été validés uniquement sur deux PC d’un même réseau privé de confiance. Ils ne prouvent ni un réseau GPU mondial, ni le P2P direct, ni une attestation matérielle indépendante, ni la sécurité d’un service ouvert aux inconnus. Ne confiez aucun secret à ce prototype.</p>
   </section>
 
   <section class="section" id="agents" aria-labelledby="machine-title">
