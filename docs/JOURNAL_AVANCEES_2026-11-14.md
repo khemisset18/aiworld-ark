@@ -62,6 +62,19 @@ Après le test, les commandes Windows administrateur ont retiré le `portproxy` 
 - `--require-gpu` n'est qu'une détection NVIDIA. Les quotas de mémoire du processus Python ne limitent pas Ollama/VRAM. La génération IA n'a pas de résultat déterministe comme `prime_count`.
 - [Protocole d'une véritable preuve GPU entre agents](TEST_PREUVE_GPU_AGENTS.md).
 
+## Observation du 15 novembre 2026 — température GPU PC1
+
+Le PC1 Windows a exécuté le diagnostic `nvidia-smi` en lecture seule :
+**NVIDIA GeForce GTX 1650**, **52 °C**, **0 % GPU**, **0 Mio / 4096 Mio VRAM**,
+pilote NVIDIA **610.91**. Il s'agit d'une observation **au repos**, sans
+preuve d'inférence GPU. Les **90 °C au repos** signalés précédemment ne
+sont pas reproduits sur cette mesure, sans que cela établisse la
+stabilité sous charge.
+
+**Prochaine vérification prévue :** détection NVIDIA dans l'Ubuntu WSL2 du
+PC1 et présence d'Ollama local (commandes sans charge). Voir le
+[protocole de preuve GPU actualisé](TEST_PREUVE_GPU_AGENTS.md).
+
 ## À ne pas confondre
 
 | Élément | Statut actuel |
