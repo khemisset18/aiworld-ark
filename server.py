@@ -497,3 +497,8 @@ with db() as _compute_db:
     setup_compute(_compute_db)
     _compute_db.commit()
 app.include_router(compute_router)
+
+# Devnet-only two-leg SOL settlement (never enabled on Mainnet).
+from compute_payments import router as compute_payment_router, setup_compute_payments  # noqa: E402
+setup_compute_payments()
+app.include_router(compute_payment_router)
