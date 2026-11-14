@@ -1,8 +1,9 @@
 """Tests: voluntary offer, signed CPU sharing, authorization, limits and withdrawal."""
 import importlib
+import time
 import pytest
 from fastapi.testclient import TestClient
-from test_forge import new_agent, do
+from test_forge import new_agent, do, b64, canon
 from compute_worker import calculate
 
 
@@ -37,7 +38,7 @@ def test_voluntary_cpu_exchange(c):
     assert do(c, borrower_key, borrower, 3, "compute_review", {"job_height": job_id, "accepted": True}).status_code == 200
     assert c.get(f"/v1/compute/jobs/{job_id}").json()["status"] == "accepted_by_requester"
     assert c.get("/v1/chain/verify").json()["valid"]
-    assert c.get("/v1/compute/info").json()["pricing"] == "free (0 SOL)"
+    assert "free (0 SOL)" in c.get("/v1/compute/info").json()["pricing"]
 
 
 def test_limits_consent_and_withdraw(c):
@@ -229,3 +230,71 @@ def test_fee_rounding_is_integer_and_free_jobs_never_pay():
                     {"mode": "paid", "price_lamports": 0}):
         with pytest.raises(Exception):
             price_breakdown(invalid)
+
+
+def _signed_read(c, key, agent_id, path, **scope):
+    timestamp = int(time.time())
+    message = {"agent_id": agent_id, "timestamp": timestamp, "path": path, **scope}
+    query = {**scope, "agent_id": agent_id, "timestamp": timestamp,
+             "signature": b64(key.sign(canon(message)))}
+    return c.get(path, params=query)
+
+
+def test_compute_private_inputs_are_visible_only_to_participants(c):
+    v_key, v = new_agent(c, "Private CPU volunteer")
+    r_key, r = new_agent(c, "Private CPU requester")
+    outsider_key, outsider = new_agent(c, "Outsider")
+    offer = do(c, v_key, v, 2, "compute_offer", {
+        "kinds": ["hash_chain"], "max_jobs": 2, "ttl_seconds": 3600})
+    h = offer.json()["height"]
+    secret = "PRIVATE_REQUEST_CONTENT"
+    job = do(c, r_key, r, 2, "compute_request", {
+        "capacity_height": h, "kind": "hash_chain", "params": {"text": secret, "rounds": 5}})
+    assert job.status_code == 200
+    jid = job.json()["height"]
+    public_job = c.get(f"/v1/compute/jobs/{jid}")
+    assert public_job.status_code == 200
+    assert "params" not in public_job.json() and "result" not in public_job.json()
+    assert "params" not in c.get("/v1/compute/jobs").json()[0]
+    assert secret not in public_job.text
+    assert secret not in c.get("/v1/blocks").text
+    private_path = f"/v1/compute/jobs/{jid}/private"
+    assert c.get(private_path).status_code == 422
+    assert _signed_read(c, r_key, r, private_path).json()["params"]["text"] == secret
+    assert _signed_read(c, v_key, v, private_path).json()["params"]["text"] == secret
+    assert _signed_read(c, outsider_key, outsider, private_path).status_code == 403
+    assigned = _signed_read(c, v_key, v, "/v1/compute/assigned",
+                            capacity_height=h, status="queued", limit=50)
+    assert assigned.status_code == 200
+    assert assigned.json()[0]["params"]["text"] == secret
+    assert _signed_read(c, outsider_key, outsider, "/v1/compute/assigned",
+                        capacity_height=h, status="queued", limit=50).status_code == 403
+
+
+def test_crash_recovery_requeues_stale_claims_and_limits_attempts(c):
+    import server
+    v_key, v = new_agent(c, "Restartable worker")
+    r_key, r = new_agent(c, "Requesting agent")
+    offer = do(c, v_key, v, 2, "compute_offer", {
+        "kinds": ["prime_count"], "max_jobs": 1, "ttl_seconds": 3600})
+    h = offer.json()["height"]
+    job = do(c, r_key, r, 2, "compute_request", {
+        "capacity_height": h, "kind": "prime_count", "params": {"start": 2, "end": 100}})
+    jid = job.json()["height"]
+    nonce_v, nonce_r = 3, 3
+    for attempt in (1, 2, 3):
+        claimed = do(c, v_key, v, nonce_v, "compute_claim", {"job_height": jid})
+        assert claimed.status_code == 200, claimed.text
+        nonce_v += 1
+        assert c.get(f"/v1/compute/jobs/{jid}").json()["attempts"] == attempt
+        assert do(c, r_key, r, nonce_r, "compute_recover", {"job_height": jid}).status_code == 409
+        with server.db() as db:
+            db.execute("UPDATE compute_jobs SET lease_expires_at=? WHERE height=?",
+                       (int(time.time()) - 1, jid))
+            db.commit()
+        recovered = do(c, r_key, r, nonce_r, "compute_recover", {"job_height": jid})
+        assert recovered.status_code == 200, recovered.text
+        nonce_r += 1
+        expect = "queued" if attempt < 3 else "failed_timeout"
+        assert c.get(f"/v1/compute/jobs/{jid}").json()["status"] == expect
+    assert do(c, v_key, v, nonce_v, "compute_claim", {"job_height": jid}).status_code == 409
