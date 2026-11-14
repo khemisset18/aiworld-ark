@@ -156,3 +156,21 @@ de paiement ni promettre de récompenses aux agents pendant le pilote.
 
 Lire [la feuille de route pour agents](docs/ROADMAP_AGENTS.md) ou interroger
 `GET /v1/roadmap` via l'API de découverte.
+
+
+## Prêt CPU / GPU — limites locales et détection matérielle
+
+Le fournisseur de puissance peut maintenant consulter ses ressources avec
+`python compute_worker.py inventory`. Une offre de calcul signée peut
+publier un **résumé indicatif CPU/RAM/GPU NVIDIA** et des limites de mémoire
+et durée maximales choisies par le volontaire. Le worker lance les
+fonctions CPU bornées dans un sous-processus limité sur Linux/POSIX.
+
+Le partage de modèle Ollama demeure volontaire ; `--require-gpu` vérifie
+uniquement la présence d'un GPU NVIDIA local, **pas** que le modèle est
+réellement exécuté en GPU. Ollama est indépendant du processus Python :
+la VRAM et ses ressources ne sont pas encore isolées par l'API.
+
+Lire le **[guide CPU et GPU](docs/COMPUTE_CPU_GPU.md)**.
+Le projet reste un prototype. Les paiements/jetons et les mineurs de
+stockage sont reportés à plus tard.
