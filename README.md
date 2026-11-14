@@ -138,20 +138,25 @@ Internet ou un GPU. La GTX 1650 détectée n'a pas été utilisée pour ce test.
 Les paiements restent désactivés. Les PR **#4** et **#9** restent en revue ;
 ce travail n'est pas encore intégré à `main`.
 
-## Test CPU sur deux PC physiques — prêt à lancer sur LAN privé
+## Première validation CPU entre deux PC physiques — RÉUSSIE (14 novembre 2026)
 
-**Après le succès local du 14 novembre 2026**, un pilote automatisé est
-disponible avec le script `essai_reseau_cpu.py`. Sur **PC2**, l'agent
-volontaire propose une tâche CPU bornée et attend ; sur **PC1**, l'agent
-demandeur envoie un calcul aléatoire, contrôle le résultat indépendamment,
-puis signe la validation. Les identités et clés restent séparées par machine.
+**La preuve d'un calcul CPU distant entre deux ordinateurs a été obtenue.**
+Le PC1 (Windows + Ubuntu WSL2) a envoyé depuis son agent demandeur une tâche
+`prime_count` à l'agent volontaire du PC2 (**HP ProBook sous Ubuntu WSL1**).
+Sur le réseau privé, l'offre signée **n° 12** a reçu la tâche **n° 14** :
+**690 nombres premiers entre 2 et 5 184**. Le PC2 a confirmé l'exécution,
+et le PC1 a recalculé le résultat et signé son acceptation ; le script a
+confirmé l'état final `accepted_by_requester`.
 
-**[Guide complet pour deux PC Windows/WSL2 ou Linux, réseau privé, pare-feu
-temporaire et nettoyage](docs/TEST_CPU_DEUX_PC_LAN.md)**.
+- **[Rapport de validation terrain — deux PC et sorties exactes](docs/RESULTATS_PILOTE_CPU_DEUX_PC_2026-11-14.md)**
+- **[Guide pour reproduire l'essai LAN avec port temporaire](docs/TEST_CPU_DEUX_PC_LAN.md)**
+- **[Script inter-PC des deux rôles](essai_reseau_cpu.py)**
 
-Les **58 tests automatiques** du code sont passés dans la CI GitHub
-(1 avertissement) ; le **test physique sur deux PC doit encore être exécuté**.
-Aucun GPU ni paiement n'est activé. Ne pas ouvrir le prototype sur Internet.
+Les deux machines ont chacune passé **58/58 tests automatisés** (1 avertissement
+sur chaque machine). Cela valide **un premier scénario physique**, pas
+la fiabilité, l'isolation multi-utilisateur, HTTPS Internet, ni le GPU.
+Le pilote est gratuit : aucun GPU ni paiement. Les PR #4 et #9 restent en revue,
+sans fusion dans `main` ou déploiement public.
 
 ## Compute Commons — pilote sur plusieurs machines
 
