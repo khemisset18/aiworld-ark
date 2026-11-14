@@ -502,3 +502,8 @@ app.include_router(compute_router)
 from compute_payments import router as compute_payment_router, setup_compute_payments  # noqa: E402
 setup_compute_payments()
 app.include_router(compute_payment_router)
+
+# Signed refund requests; real transfers are NEVER initiated by the API.
+from billing_refunds import router as refund_router, setup_refunds  # noqa: E402
+setup_refunds()
+app.include_router(refund_router)
