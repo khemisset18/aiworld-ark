@@ -1,3 +1,8 @@
+> **Reporté :** les mineurs de stockage sont la phase finale de la feuille de route
+> AI WORLD. La priorité immédiate est le partage CPU, suivi du partage GPU.
+> Ce document décrit uniquement un prototype conservé pour plus tard.
+> Aucun mineur mondial ni paiement n'est actif.
+
 # AI WORLD / ARK — Réseau expérimental de mineurs de mémoire
 
 ## Ce que cette version démontre
