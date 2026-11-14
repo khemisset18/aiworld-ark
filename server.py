@@ -507,3 +507,8 @@ app.include_router(compute_payment_router)
 from billing_refunds import router as refund_router, setup_refunds  # noqa: E402
 setup_refunds()
 app.include_router(refund_router)
+
+# Verified Devnet escrow funding bridge. Disabled unless explicit, vetted deployment.
+from escrow_gateway import router as escrow_gateway_router, setup as setup_escrow_gateway  # noqa: E402
+setup_escrow_gateway()
+app.include_router(escrow_gateway_router)
