@@ -192,7 +192,7 @@ def _validate_snapshot(account: dict, address: str, program: str, expected: dict
 def info():
     return {"enabled": active_program_id() is not None,
             "network": "solana-devnet", "mainnet_enabled": False,
-            "fee_percent": 3, "membership_sol_per_year": 20,
+            "fee_percent": 3, "club_entry_fee_sol": 10, "entry_payment": "one_time",
             "treasury": TREASURY,
             "status": "proof-of-funding-only; not a completed payment",
             "warning": "This is NOT a deployment, independent audit or escrow guarantee."}
