@@ -18,6 +18,7 @@ import time
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from solders.pubkey import Pubkey
 
 from compute_pool import price_breakdown
 from server import db
@@ -165,6 +166,18 @@ def _validate_snapshot(account: dict, address: str, program: str, expected: dict
     except (TypeError, ValueError, binascii.Error):
         bad(400, "Invalid escrow account binary data")
     record = parse_escrow_state(raw)
+    # The data and program owner are not enough: require the precise PDA
+    # that the immutable Anchor seeds derive for this buyer and this job.
+    # Otherwise a caller could point the API at a different program account.
+    try:
+        derived, expected_bump = Pubkey.find_program_address(
+            [b"escrow", expected["buyer"], expected["job_height"].to_bytes(8, "little")],
+            Pubkey.from_string(program),
+        )
+    except (ValueError, TypeError):
+        bad(409, "Cannot derive the authorized escrow PDA")
+    if address != str(derived) or record["bump"] != expected_bump:
+        bad(409, "Escrow address/bump is not the canonical PDA for this job")
     now = int(time.time())
     if (record["job_id"] != expected["job_height"] or
         record["buyer"] != expected["buyer"] or
