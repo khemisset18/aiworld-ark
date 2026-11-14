@@ -1,6 +1,6 @@
 # AI WORLD — Pilote GPU entre deux vrais PC (LAN privé)
 
-**STATUT : PRÊT À EXÉCUTER, NON ENCORE VALIDÉ ENTRE LES DEUX PC.**
+**STATUT AU 15 NOVEMBRE 2026 : PILOTE EXÉCUTÉ ET VALIDÉ ENTRE PC1 ET PC2.** Consultez le [rapport de preuve inter-PC, offre 19/tâche 21](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md). Les commandes ci-dessous restent disponibles pour reproduire un nouveau test ; **inutile de les relancer pour démontrer le pilote déjà réussi**.
 
 La preuve **locale** GPU de PC1 est réussie : Ollama 0.40.16, modèle `smollm2:135m`, `size_vram_bytes=381828463`, 441 Mio de VRAM utilisés et inférence AI WORLD fonctionnelle. Voir le [rapport local GPU](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md).
 
@@ -127,7 +127,7 @@ Le demandeur crée/reprend une identité privée **distincte** sous `~/.aiworld-
 
 **PC2 :** `PC2 - TACHE GPU N° ...` puis `SUCCES : inference inter-PC signee et acceptee` et statut final `accepted_by_requester`.
 
-**Ne déclarer le test GPU inter-PC réussi qu'après les deux journaux réels**, pas après la seule simulation des tests GitHub.
+**Les deux journaux réels de l'offre n° 19 et de la tâche n° 21 ont maintenant été recueillis.** PC1 a mesuré 0 → 441 Mio de VRAM, 6 % de GPU au pic et 381 828 463 octets Ollama en VRAM pendant l'inférence ; PC2 a signé `accepted_by_requester`. Voir le [rapport terrain](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md). Ce n'est ni une attestation cryptographique indépendante du matériel ni une preuve d'un réseau GPU public.
 
 ## 7. Après le pilote, fermer l'accès réseau
 
@@ -140,7 +140,7 @@ netsh interface portproxy show v4tov4
 Get-NetFirewallRule -DisplayName "AIWORLD-GPU-PILOT-8000" -ErrorAction SilentlyContinue
 ```
 
-Ces commandes ne doivent retirer **que** les règles du pilote. Ne jamais mettre sur GitHub les identités privées `*.json`, prompts secrets ou états confidentiels.
+**Le nettoyage doit encore être confirmé par l'opérateur**. Ces commandes ne doivent retirer **que** les règles du pilote. Ne jamais mettre sur GitHub les identités privées `*.json`, prompts secrets ou états confidentiels.
 
 ## Limites
 
