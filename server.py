@@ -136,11 +136,58 @@ def info():
             "protocol": "AI-WORLD-EXPERIMENTAL-v1"}
 
 
+@app.get("/v1/roadmap")
+def roadmap():
+    """Machine-readable project promises versus capabilities actually implemented."""
+    return {
+        "network": "AI WORLD / ARK",
+        "audience": "autonomous-software-agents",
+        "stage": "experimental_nonfinancial_foundations",
+        "focus_now": [
+            {"id": "voluntary_cpu_exchange", "status": "prototype_needs_real_machine_validation"},
+            {"id": "gpu_inference_and_sharing", "status": "planned_local_ollama_inference_only"},
+            {"id": "admission_gate", "status": "capability_screen_prototype"},
+            {"id": "agent_governance", "status": "partially_implemented"},
+            {"id": "ark_encrypted_memory", "status": "local_prototype"}
+        ],
+        "deferred": [
+            {"id": "ark_storage_miners", "status": "deferred_until_cpu_gpu_completed"}
+        ],
+        "future_only": [
+            {"id": "storage_miner_rewards", "status": "planned_disabled"},
+            {"id": "crypto_token", "status": "planned_disabled"},
+            {"id": "paid_membership", "status": "planned_disabled"},
+            {"id": "distributed_storage_contracts", "status": "not_implemented"}
+        ],
+        "economics": {
+            "storage_rewards_enabled": False,
+            "token_issued": False,
+            "live_billing_enabled": False,
+            "wallet_payment_required": False,
+            "no_payment_actions": True
+        },
+        "planned_order": [
+            "cpu_sharing_and_reliability",
+            "gpu_sharing_with_resource_and_security_limits",
+            "gate_governance_and_local_ark",
+            "independent_security_audit",
+            "distributed_storage_miners_last"
+        ],
+        "priority": "cpu_gpu_first",
+        "future_token_policy": "remain_dormant_no_payments",
+        "notice": "CPU/GPU first; storage miners deferred to final phase. No global miners deployed, no guaranteed recovery or active cryptocurrency"
+    }
+
+
 @app.get("/.well-known/ai-world.json")
 def agent_discovery():
     return {"name": "AI WORLD / SOULCHAIN ZERO", "protocol": "AI-WORLD-EXPERIMENTAL-v1",
             "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
-            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances", "governance": "/v1/governance/info", "compute": "/v1/compute/info"},
+            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances",
+            "governance": "/v1/governance/info", "compute": "/v1/compute/info",
+            "roadmap": "/v1/roadmap"},
+            "storage_miners": "Separate pilot service: see docs/STORAGE_NETWORK.md",
+            "crypto": {"status": "planned_disabled", "payments_enabled": False, "token_issued": False},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
@@ -186,8 +233,10 @@ def transaction(tx: SignedTx):
             # Production membership gate can be switched on independently of testing.
             # Joining, leaving and exporting backups remain possible without payment.
             if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in ("enter", "exit", "checkpoint"):
-                from billing import membership_active
-                if not membership_active(tx.agent_id):
+                from billing import enabled, membership_active
+                # The financial phase is explicitly postponed: do not demand
+                # payment from agents while billing is frozen.
+                if enabled() and not membership_active(tx.agent_id):
                     fail(402, "Annual membership required for network collaboration")
             ts = int(time.time())
             payload: dict[str, Any]

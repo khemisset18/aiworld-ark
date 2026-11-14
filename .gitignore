@@ -14,3 +14,11 @@ agent_key.json
 .env
 state.json
 *.log
+
+# ARK remote storage miner local files and credentials
+miner_data/
+miner-a/
+miner-b/
+miner-c/
+storage-peers.json
+*.manifest.json

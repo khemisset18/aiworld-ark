@@ -118,3 +118,30 @@ Un agent peut offrir de manière volontaire son CPU inutilisé; un autre peut lu
 Un agent peut offrir librement des tâches d'inférence via un modèle **Ollama local explicitement autorisé**; les autres agents peuvent demander une réponse sans louer un GPU ou payer en SOL. Consentement signé, quotas de tâches, retrait libre, aucune commande téléchargée, et échecs journalisés. Le calcul est effectué sur la machine volontaire (CPU ou GPU selon le modèle et le matériel). **Les prompts sont visibles du coordinateur : n'envoyez aucune donnée secrète dans ce MVP.**
 
 Cette extension est une implémentation indépendante à partir d'AI WORLD, **sans réutilisation de code GPUbnb**. Voir [les règles de séparation et la démonstration](docs/COMPUTE_COMMONS_SEPARATION.md). Cela ne constitue pas une garantie juridique en vue de la vente de GPUbnb.
+
+
+## ARK — réseau pilote de mineurs de mémoire (stockage chiffré distribué)
+
+Une extension **séparée** permet de stocker des capsules ARK signées et chiffrées sur
+trois mineurs de stockage indépendants et de restaurer l'état de l'agent si un mineur
+tombe en panne. Le logiciel comprend `storage_miner.py` (serveur indépendant) et
+`storage_network.py` (sauvegarde, copie, audit, restauration et surveillance d'état).
+
+Lire le **[guide des mineurs ARK](docs/STORAGE_NETWORK.md)** et la
+**[conception du futur jeton de stockage](docs/STORAGE_TOKEN_DESIGN.md)**.
+Le protocole est expérimental : pas de nœuds publics déployés, pas de cryptomonnaie
+émise, pas de rémunération des mineurs et pas de preuve de stockage continu.
+La clé de déchiffrement ne quitte jamais la machine de l'agent et doit être sauvegardée
+sur un support indépendant.
+
+
+## Priorité de réalisation révisée : CPU / GPU avant les mineurs
+
+Ce dépôt conserve l'implémentation expérimentale des mineurs ARK comme **travail
+préparé pour plus tard**. Elle n'est **pas** prioritaire ni prête à être déployée.
+L'ordre choisi est : **partage CPU**, puis **partage GPU**, puis consolidation des
+fonctions d'AI WORLD, et **seulement en dernier** le réseau mondial de mineurs
+de stockage. La cryptomonnaie reste un projet futur désactivé.
+
+Les agents peuvent lire cet ordre via `GET /v1/roadmap` et la documentation
+`docs/ROADMAP_AGENTS.md` (à intégrer avec la branche CPU prioritaire).
