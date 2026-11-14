@@ -12,8 +12,26 @@ import time
 from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/v1/compute", tags=["voluntary-compute-pool"])
-OPERATIONS = {"compute_offer", "compute_withdraw", "compute_request", "compute_claim", "compute_complete", "compute_review", "compute_fail"}
+OPERATIONS = {"compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_complete", "compute_review", "compute_fail"}
 KINDS = {"hash_chain", "prime_count", "inference"}
+FEE_BPS = 300  # 3% of paid job gross, not charged for free compute.
+BPS_DENOMINATOR = 10_000
+
+
+def price_breakdown(terms: dict) -> dict:
+    """Integer-lamport quote; the requester pays the displayed gross amount."""
+    if not isinstance(terms, dict) or set(terms) != {"mode", "price_lamports"}:
+        bad(400, "Invalid quote terms")
+    mode, amount = terms["mode"], terms["price_lamports"]
+    if mode not in ("free", "paid") or type(amount) is not int or not 0 <= amount <= 10**15:
+        bad(400, "Invalid price")
+    if (mode == "free") != (amount == 0):
+        bad(400, "Free must be zero and paid must be positive")
+    fee = (amount * FEE_BPS + BPS_DENOMINATOR - 1) // BPS_DENOMINATOR if amount else 0
+    return {"mode": mode, "price_lamports": amount, "platform_fee_lamports": fee,
+            "provider_lamports": amount - fee, "fee_bps": FEE_BPS if amount else 0,
+            "payment_status": "not_implemented" if amount else "not_required"}
+
 
 
 def bad(code: int, detail: str):
@@ -25,7 +43,7 @@ def setup(conn: sqlite3.Connection):
     CREATE TABLE IF NOT EXISTS compute_capacity (
         height INTEGER PRIMARY KEY, owner TEXT NOT NULL, kinds TEXT NOT NULL,
         max_jobs INTEGER NOT NULL, expiry INTEGER NOT NULL,
-        models_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'open');
+        models_json TEXT NOT NULL DEFAULT '[]', terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}', status TEXT NOT NULL DEFAULT 'open');
     CREATE TABLE IF NOT EXISTS compute_jobs (
         height INTEGER PRIMARY KEY, capacity_height INTEGER NOT NULL,
         requester TEXT NOT NULL, worker TEXT NOT NULL, kind TEXT NOT NULL,
@@ -37,6 +55,8 @@ def setup(conn: sqlite3.Connection):
     columns = {r[1] for r in conn.execute("PRAGMA table_info(compute_capacity)")}
     if "models_json" not in columns:
         conn.execute("ALTER TABLE compute_capacity ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]'")
+    if "terms_json" not in columns:
+        conn.execute("""ALTER TABLE compute_capacity ADD COLUMN terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}'""")
 
 
 def model_name(value):
@@ -106,8 +126,10 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
     """Execute an operation inside the server's signed, serialized transaction."""
     now = int(time.time())
     if op == "compute_offer":
-        if set(data) not in ({"kinds", "max_jobs", "ttl_seconds"}, {"kinds", "max_jobs", "ttl_seconds", "models"}):
+        if not {"kinds", "max_jobs", "ttl_seconds"} <= set(data) or set(data) - {"kinds", "max_jobs", "ttl_seconds", "models", "terms"}:
             bad(400, "Invalid capacity offer fields")
+        terms = data.get("terms", {"mode": "free", "price_lamports": 0})
+        price_breakdown(terms)  # validates terms
         kinds, quota, ttl = data["kinds"], data["max_jobs"], data["ttl_seconds"]
         if not isinstance(kinds, list) or not kinds or len(kinds) > len(KINDS) or any(type(k) is not str or k not in KINDS for k in kinds) or len(set(kinds)) != len(kinds):
             bad(400, "Offer must list distinct supported job kinds")
@@ -120,10 +142,10 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(400, "max_jobs must be 1..25")
         if type(ttl) is not int or not 60 <= ttl <= 86400:
             bad(400, "ttl_seconds must be 60..86400")
-        conn.execute("INSERT INTO compute_capacity (height,owner,kinds,max_jobs,expiry,models_json,status) VALUES (?,?,?,?,?,?,?)",
-                     (height, actor, json.dumps(kinds), quota, now + ttl, json.dumps(models), "open"))
+        conn.execute("INSERT INTO compute_capacity (height,owner,kinds,max_jobs,expiry,models_json,terms_json,status) VALUES (?,?,?,?,?,?,?,?)",
+                     (height, actor, json.dumps(kinds), quota, now + ttl, json.dumps(models), json.dumps(terms), "open"))
         return {"capacity_height": height, "kinds": kinds, "models": models, "max_jobs": quota,
-                "expires_at": now + ttl, "cost": "0 SOL", "status": "open"}
+                "expires_at": now + ttl, "terms": price_breakdown(terms), "status": "open"}
     if op == "compute_withdraw":
         exact(data, {"capacity_height"})
         offer = row(conn, "compute_capacity", data["capacity_height"])
@@ -132,12 +154,20 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         if offer["status"] != "open":
             bad(409, "Offer already withdrawn")
         conn.execute("UPDATE compute_capacity SET status='withdrawn' WHERE height=?", (offer["height"],))
-        conn.execute("UPDATE compute_jobs SET status='cancelled',updated_at=? WHERE capacity_height=? AND status IN ('queued','claimed')",
+        conn.execute("UPDATE compute_jobs SET status='cancelled',updated_at=? WHERE capacity_height=? AND status IN ('queued','claimed','awaiting_payment','seller_approved_awaiting_payment')",
                      (now, offer["height"]))
         return {"capacity_height": offer["height"], "status": "withdrawn", "cancelled_pending": True}
     if op == "compute_request":
-        exact(data, {"capacity_height", "kind", "params"})
+        if set(data) not in ({"capacity_height", "kind", "params"},
+                             {"capacity_height", "kind", "params", "agreed_price_lamports"}):
+            bad(400, "Invalid request fields")
         offer = row(conn, "compute_capacity", data["capacity_height"])
+        terms = json.loads(offer["terms_json"])
+        if terms["mode"] == "paid":
+            if type(data.get("agreed_price_lamports")) is not int or data["agreed_price_lamports"] != terms["price_lamports"]:
+                bad(409, "Requester must explicitly sign the quoted gross price")
+        elif "agreed_price_lamports" in data and data["agreed_price_lamports"] != 0:
+            bad(400, "Free job cannot have a price")
         if actor == offer["owner"]:
             bad(400, "Volunteer and requester must be different identities")
         if offer["status"] != "open" or offer["expiry"] <= now:
@@ -151,10 +181,25 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         n = conn.execute("SELECT COUNT(*) FROM compute_jobs WHERE capacity_height=?", (offer["height"],)).fetchone()[0]
         if n >= offer["max_jobs"]:
             bad(409, "Volunteer capacity quota exhausted")
+        state = "awaiting_payment" if terms["mode"] == "paid" else "queued"
         conn.execute("INSERT INTO compute_jobs (height,capacity_height,requester,worker,kind,params_json,status,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                     (height, offer["height"], actor, offer["owner"], kind, json.dumps(params), "queued", now))
+                     (height, offer["height"], actor, offer["owner"], kind, json.dumps(params), state, now))
         return {"job_height": height, "capacity_height": offer["height"], "kind": kind,
-                "requester": actor, "worker": offer["owner"], "status": "queued", "cost": "0 SOL"}
+                "requester": actor, "worker": offer["owner"], "status": state, "terms": price_breakdown(terms),
+                "notice": "Paid execution disabled until verified Solana settlement is implemented" if terms["mode"] == "paid" else "Free exchange"}
+    if op == "compute_authorize":
+        exact(data, {"job_height"})
+        job = row(conn, "compute_jobs", data["job_height"])
+        offer = row(conn, "compute_capacity", job["capacity_height"])
+        if actor != job["worker"]:
+            bad(403, "Only resource provider may approve a paid offer")
+        if job["status"] != "awaiting_payment" or offer["status"] != "open" or offer["expiry"] <= now:
+            bad(409, "Paid job not awaiting authorization")
+        # No client operation can mark a paid job as settled.
+        conn.execute("UPDATE compute_jobs SET status='seller_approved_awaiting_payment',updated_at=? WHERE height=?",
+                     (now, job["height"]))
+        return {"job_height": job["height"], "status": "seller_approved_awaiting_payment",
+                "payment_verified": False, "notice": "Settlement verifier not implemented: execution remains blocked"}
     if op == "compute_claim":
         exact(data, {"job_height"})
         job = row(conn, "compute_jobs", data["job_height"])
@@ -202,12 +247,13 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
 
 @router.get("/info")
 def info():
-    return {"name": "AI WORLD voluntary compute commons", "pricing": "free (0 SOL)",
+    return {"name": "AI WORLD compute commons", "pricing": "free (0 SOL) or optional paid (3% platform fee)", "fee_bps": FEE_BPS,
             "architecture": "single-server coordination; execution happens on volunteer CPU",
             "supported_jobs": sorted(KINDS), "remote_code_execution": False,
             "worker_consent": "explicit signed offer and separate signed claim per job",
             "trust": "result is unverified until requester attests; identities are not Sybil-resistant",
-            "inference": "optional local Ollama; no tool execution; no secrets in prompts"}
+            "inference": "optional local Ollama; no tool execution; no secrets in prompts",
+            "paid_exchange": "quotes only; paid execution disabled pending audited Solana settlement verifier"}
 
 
 @router.get("/offers")
@@ -224,7 +270,7 @@ def offers(status: str = "available", limit: int = Query(50, ge=1, le=100)):
             count = conn.execute("SELECT COUNT(*) FROM compute_jobs WHERE capacity_height=?", (r["height"],)).fetchone()[0]
             if status == "available" and count >= r["max_jobs"]:
                 continue
-            result.append({**dict(r), "kinds": json.loads(r["kinds"]), "models": json.loads(r["models_json"]), "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
+            result.append({**dict(r), "kinds": json.loads(r["kinds"]), "models": json.loads(r["models_json"]), "terms": price_breakdown(json.loads(r["terms_json"])), "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
         return result
 
 
@@ -232,7 +278,7 @@ def offers(status: str = "available", limit: int = Query(50, ge=1, le=100)):
 def jobs(capacity_height: int | None = None, requester: str | None = None,
          status: str = "all", limit: int = Query(50, ge=1, le=100)):
     from server import db
-    if status not in ("all", "queued", "claimed", "completed_unverified", "accepted_by_requester", "rejected_by_requester", "cancelled", "failed_by_worker"):
+    if status not in ("all", "queued", "awaiting_payment", "seller_approved_awaiting_payment", "claimed", "completed_unverified", "accepted_by_requester", "rejected_by_requester", "cancelled", "failed_by_worker"):
         bad(400, "Invalid job status")
     if capacity_height is not None and capacity_height < 1:
         bad(400, "Invalid capacity height")
