@@ -42,12 +42,19 @@ entre deux ordinateurs distincts sur réseau privé** : offre 12, tâche 14,
   d'un GPU, avec consentement et possibilité de retirer l'offre.
 - Faire des essais de panne, de refus, de saturation et de confidentialité.
 
-**État réel :** un volontaire peut déjà consentir à exécuter une inférence
-Ollama locale, éventuellement accélérée par son GPU. La branche CPU/GPU ajoute
-la détection locale NVIDIA et l'annonce signée des ressources, **pas** le contrôle
-effectif de VRAM ou l'obligation pour Ollama d'utiliser un GPU. **Cela n'est pas**
-une location de GPU généraliste, un cluster GPU partagé, ni la combinaison de
-plusieurs GPU en une seule machine.
+**État réel (15 novembre 2026) : pilote d'inférence GPU validé entre
+deux ordinateurs physiques sur LAN privé.** PC1 a proposé sa GTX 1650 sous
+Ubuntu WSL2 (offre signée n° 19), PC2 sous Ubuntu WSL1 a demandé l'inférence
+(tâche n° 21), récupéré le texte et signé l'état
+`accepted_by_requester`. Sur PC1, pendant **cette tâche**, Ollama déclarait
+**381 828 463 octets en VRAM GPU**, NVIDIA indiquait un pic de
+**441 Mio de VRAM** et **6 % d'activité**. [Consulter les journaux du pilote
+GPU entre deux PC](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
+
+Ce pilote valide **une démonstration pratique de routage et d'offload GPU
+sur un LAN privé**. Il ne valide **pas** des GPU combinés en une seule machine,
+un cluster, un réseau P2P direct, des quotas VRAM contraignants, une
+attestation matérielle indépendante ou un déploiement public sécurisé.
 
 ## Phase 3 — Consolider AI WORLD
 
