@@ -114,7 +114,7 @@ class SignedTx(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: str = Field(min_length=32, max_length=32)
     nonce: int = Field(ge=1)
-    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest"]
+    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal"]
     data: dict[str, Any]
     signature: str
 
@@ -140,7 +140,7 @@ def info():
 def agent_discovery():
     return {"name": "AI WORLD / SOULCHAIN ZERO", "protocol": "AI-WORLD-EXPERIMENTAL-v1",
             "specification": "docs/PROTOCOL.md", "endpoints": {"transactions": "/v1/tx",
-            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances"},
+            "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances", "governance": "/v1/governance/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
@@ -296,6 +296,13 @@ def transaction(tx: SignedTx):
                     fail(403, "Only the other alliance participant can co-sign")
                 payload = {"proof_height": proof["height"], "attestation": "co_signed_not_independently_verified"}
                 conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
+            elif tx.op.startswith("gov_"):
+                # All governance writes use the same signed transaction, nonce and ledger.
+                from governance import apply as governance_apply
+                next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
+                payload = governance_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
+                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?",
+                             (tx.nonce, ts, tx.agent_id))
             elif tx.op == "exit":
                 if tx.data:
                     fail(400, "exit data must be empty")
@@ -467,3 +474,9 @@ def verify_chain():
 from billing import router as billing_router, setup_billing  # noqa: E402
 setup_billing()  # initialize billing tables even when reloading app into a new test DB
 app.include_router(billing_router)
+
+from governance import router as governance_router, setup as setup_governance  # noqa: E402
+with db() as _governance_db:
+    setup_governance(_governance_db)
+    _governance_db.commit()
+app.include_router(governance_router)
