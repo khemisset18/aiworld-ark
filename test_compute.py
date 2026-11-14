@@ -298,3 +298,29 @@ def test_crash_recovery_requeues_stale_claims_and_limits_attempts(c):
         expect = "queued" if attempt < 3 else "failed_timeout"
         assert c.get(f"/v1/compute/jobs/{jid}").json()["status"] == expect
     assert do(c, v_key, v, nonce_v, "compute_claim", {"job_height": jid}).status_code == 409
+
+
+def test_legacy_claim_without_lease_can_recover(c):
+    import server
+    v_key, v = new_agent(c, "Legacy worker")
+    r_key, r = new_agent(c, "Legacy requester")
+    h = do(c, v_key, v, 2, "compute_offer", {
+        "kinds": ["hash_chain"], "max_jobs": 1, "ttl_seconds": 3600}).json()["height"]
+    j = do(c, r_key, r, 2, "compute_request", {
+        "capacity_height": h, "kind": "hash_chain", "params": {"text": "x", "rounds": 2}}).json()["height"]
+    assert do(c, v_key, v, 3, "compute_claim", {"job_height": j}).status_code == 200
+    with server.db() as conn:
+        conn.execute("UPDATE compute_jobs SET lease_expires_at=NULL,updated_at=? WHERE height=?",
+                     (int(time.time()) - 181, j))
+        conn.commit()
+    assert do(c, r_key, r, 3, "compute_recover", {"job_height": j}).status_code == 200
+    assert c.get(f"/v1/compute/jobs/{j}").json()["status"] == "queued"
+
+
+def test_volunteer_can_withdraw_after_membership_gate_switches_on(c, monkeypatch):
+    v_key, v = new_agent(c, "Safe withdrawal")
+    h = do(c, v_key, v, 2, "compute_offer", {
+        "kinds": ["hash_chain"], "max_jobs": 1, "ttl_seconds": 3600}).json()["height"]
+    monkeypatch.setenv("ARK_PAYMENT_REQUIRED", "1")
+    cancelled = do(c, v_key, v, 3, "compute_withdraw", {"capacity_height": h})
+    assert cancelled.status_code == 200, cancelled.text
