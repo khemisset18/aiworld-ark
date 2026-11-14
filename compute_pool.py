@@ -45,7 +45,8 @@ def setup(conn: sqlite3.Connection):
     CREATE TABLE IF NOT EXISTS compute_capacity (
         height INTEGER PRIMARY KEY, owner TEXT NOT NULL, kinds TEXT NOT NULL,
         max_jobs INTEGER NOT NULL, expiry INTEGER NOT NULL,
-        models_json TEXT NOT NULL DEFAULT '[]', terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}', status TEXT NOT NULL DEFAULT 'open');
+        models_json TEXT NOT NULL DEFAULT '[]', terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}',
+        resources_json TEXT NOT NULL DEFAULT '{}', limits_json TEXT NOT NULL DEFAULT '{"max_wall_seconds":120,"max_memory_mb":512}', status TEXT NOT NULL DEFAULT 'open');
     CREATE TABLE IF NOT EXISTS compute_jobs (
         height INTEGER PRIMARY KEY, capacity_height INTEGER NOT NULL,
         requester TEXT NOT NULL, worker TEXT NOT NULL, kind TEXT NOT NULL,
@@ -60,11 +61,47 @@ def setup(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE compute_capacity ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]'")
     if "terms_json" not in columns:
         conn.execute("""ALTER TABLE compute_capacity ADD COLUMN terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}'""")
+    if "resources_json" not in columns:
+        conn.execute("ALTER TABLE compute_capacity ADD COLUMN resources_json TEXT NOT NULL DEFAULT '{}'")
+    if "limits_json" not in columns:
+        conn.execute("""ALTER TABLE compute_capacity ADD COLUMN limits_json TEXT NOT NULL DEFAULT '{"max_wall_seconds":120,"max_memory_mb":512}'""")
     job_columns = {r[1] for r in conn.execute("PRAGMA table_info(compute_jobs)")}
     if "lease_expires_at" not in job_columns:
         conn.execute("ALTER TABLE compute_jobs ADD COLUMN lease_expires_at INTEGER")
     if "attempts" not in job_columns:
         conn.execute("ALTER TABLE compute_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+
+
+DEFAULT_LIMITS = {"max_wall_seconds": 120, "max_memory_mb": 512}
+
+
+def validate_volunteer_limits(value):
+    if not isinstance(value, dict) or set(value) != {"max_wall_seconds", "max_memory_mb"}:
+        bad(400, "Invalid volunteer task limits")
+    wall, memory = value["max_wall_seconds"], value["max_memory_mb"]
+    if type(wall) is not int or not 5 <= wall <= 120:
+        bad(400, "Task wall time must be 5..120 seconds")
+    if type(memory) is not int or not 256 <= memory <= 4096:
+        bad(400, "Task memory bound must be 256..4096 MiB")
+    return value
+
+
+def validate_resources(value):
+    """Volunteer-signed advertised snapshot, not independently verified hardware."""
+    required = {"logical_cpu_cores", "memory_available_mb", "nvidia_gpu_count", "nvidia_vram_total_mb"}
+    if not isinstance(value, dict) or set(value) != required:
+        bad(400, "Invalid capacity resource inventory")
+    cpu, mem, gpu, vram = (value[k] for k in ("logical_cpu_cores", "memory_available_mb",
+                                             "nvidia_gpu_count", "nvidia_vram_total_mb"))
+    if type(cpu) is not int or not 1 <= cpu <= 1024:
+        bad(400, "Invalid CPU core count")
+    if mem is not None and (type(mem) is not int or not 1 <= mem <= 10000000):
+        bad(400, "Invalid available memory snapshot")
+    if type(gpu) is not int or not 0 <= gpu <= 16:
+        bad(400, "Invalid GPU count")
+    if type(vram) is not int or not 0 <= vram <= 1000000 or (gpu == 0 and vram != 0):
+        bad(400, "Invalid VRAM summary")
+    return value
 
 
 def model_name(value):
