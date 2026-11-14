@@ -7,7 +7,9 @@ import json
 import math
 import time
 from pathlib import Path
-from agent_cli import api, read, transact
+from urllib.parse import urlencode
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from agent_cli import api, read, transact, canonical, b64, un64
 
 
 def calculate(kind: str, params: dict) -> dict:
@@ -31,8 +33,32 @@ def calculate(kind: str, params: dict) -> dict:
     raise ValueError("Unsupported work kind")
 
 
+def signed_compute_read(base: str, account: dict, path: str, scope: dict | None = None):
+    """Authenticate reads of private prompts/results without revealing the key."""
+    scope = scope or {}
+    timestamp = int(time.time())
+    message = {"agent_id": account["agent_id"], "timestamp": timestamp, "path": path, **scope}
+    key = Ed25519PrivateKey.from_private_bytes(un64(account["private_key"]))
+    args = {**scope, "agent_id": account["agent_id"], "timestamp": timestamp,
+            "signature": b64(key.sign(canonical(message)))}
+    return api(base, path + "?" + urlencode(args))
+
+
+def assigned(base: str, account: dict, offer_height: int, status: str = "queued"):
+    return signed_compute_read(base, account, "/v1/compute/assigned",
+                               {"capacity_height": offer_height, "status": status, "limit": 50})
+
+
+def private_job(base: str, account: dict, height: int):
+    return signed_compute_read(base, account, f"/v1/compute/jobs/{height}/private")
+
+
 def run_once(base: str, account: dict, offer_height: int, approved_models: set[str] | None = None) -> int:
-    jobs = api(base, f"/v1/compute/jobs?capacity_height={offer_height}&status=queued&limit=50")
+    # The same provider identity may recover its own stale claims after a restart.
+    for stale in assigned(base, account, offer_height, "claimed"):
+        if stale["lease_expires_at"] is not None and stale["lease_expires_at"] <= int(time.time()):
+            transact(base, account, "compute_recover", {"job_height": stale["height"]})
+    jobs = assigned(base, account, offer_height)
     for job in jobs:
         # Other workers' jobs must not be claimed by this identity.
         if job["worker"] != account["agent_id"]:
@@ -57,7 +83,7 @@ def run_once(base: str, account: dict, offer_height: int, approved_models: set[s
 
 def main():
     p = argparse.ArgumentParser(description="AI WORLD compute commons — voluntary CPU lending, 0 SOL")
-    p.add_argument("command", choices=["offer", "withdraw", "request", "authorize", "serve", "verify", "offers", "jobs"])
+    p.add_argument("command", choices=["offer", "withdraw", "request", "authorize", "serve", "verify", "recover", "offers", "jobs"])
     p.add_argument("--identity", default="agent_key.json")
     p.add_argument("--server", default="http://127.0.0.1:8000")
     p.add_argument("--offer", type=int, default=0)
@@ -106,8 +132,11 @@ def main():
         if args.price_lamports:
             request["agreed_price_lamports"] = args.price_lamports
         print(transact(base, account, "compute_request", request)); return
+    if args.command == "recover":
+        print(transact(base, account, "compute_recover", {"job_height": args.job}))
+        return
     if args.command == "verify":
-        job = api(base, f"/v1/compute/jobs/{args.job}")
+        job = private_job(base, account, args.job)
         if job["requester"] != account["agent_id"]:
             raise SystemExit("Only the requester can verify this job")
         if job["status"] != "completed_unverified":
