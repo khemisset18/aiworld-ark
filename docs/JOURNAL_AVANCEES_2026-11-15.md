@@ -1,4 +1,4 @@
-# Journal AI WORLD — 15 novembre 2026 : première preuve GPU locale
+# Journal AI WORLD — 15 novembre 2026 : preuve GPU locale ET entre deux PC
 
 **Source :** journaux PowerShell/Ubuntu WSL2 transmis par l'opérateur et changements réels committés à la branche de développement de PR #9. Les tests automatiques et le logiciel codé sont distincts des tests physiques.
 
@@ -16,9 +16,9 @@ Observations réelles :
 - Le vrai chemin d'inférence AI WORLD `volunteer_inference.infer_local` renvoie ensuite un texte non vide.
 - Le texte renvoyé par le petit modèle peut être de faible qualité ; une réponse non vide ne garantit pas l'exactitude. La télémétrie GPU instantanée à 0 % était **après** la génération, non pendant.
 
-**Conclusion :** première preuve locale d'inférence Ollama utilisant la VRAM GPU, et chemin AI WORLD opérationnel. Aucun résultat GPU entre PC1 et PC2 n'est encore attesté. Rapport exact : [preuves GPU du 15 novembre](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md).
+**Conclusion :** première preuve locale d'inférence Ollama utilisant la VRAM GPU, et chemin AI WORLD opérationnel. La preuve GPU entre PC1 et PC2 est désormais également attestée par des journaux concordants (offre 19, tâche 21). Rapport exact : [preuves GPU du 15 novembre](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md).
 
-## Pilote GPU entre deux PC — échange signé validé sur PC2, preuve GPU de la tâche en attente
+## Pilote GPU entre deux PC — OFFLOAD NVIDIA ET DEMANDE SIGNÉE VALIDÉS
 
 Un nouveau script `essai_reseau_gpu.py` prépare le rôle **PC1 volontaire GPU, PC2 demandeur WSL1**, inverse du pilote CPU. Il conserve les identités privées sur chaque machine, exige une offre signée volontaire de type `inference` pour un modèle autorisé, **0 paiement**, 1 tâche, 120 s, et bloque les résultats d'un autre volontaire.
 
@@ -28,7 +28,7 @@ Le volontaire tente d'observer pendant la génération une montée de VRAM NVIDI
 - [Programme pilote GPU inter-PC](../essai_reseau_gpu.py).
 - [Tests automatisés du pilote GPU](../test_essai_reseau_gpu.py).
 
-**État actualisé :** le PC1 a bien publié l'offre GPU n° 19, PC2 a envoyé une demande signée n° 21, obtenu un texte et confirmé une revue signée avec état `accepted_by_requester`. C'est une **réussite du transfert d'inférence entre deux agents**, mais les métriques NVIDIA/Ollama du PC1 **pendant cette tâche** ne sont pas encore transmises ; **la preuve de GPU inter-PC est donc en attente**. Après collecte de la sortie PC1, retirer les règles LAN temporaires. [Rapport inter-PC partiel](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
+**État actualisé :** le PC1 a bien publié l'offre GPU n° 19, PC2 a envoyé une demande signée n° 21, obtenu un texte et confirmé une revue signée avec état `accepted_by_requester`. C'est une **réussite du transfert d'inférence entre deux agents**, et les métriques NVIDIA/Ollama ont été relevées sur PC1 **pendant cette même tâche**. **La preuve GPU inter-PC est donc validée pour le pilote sur LAN privé**. Après collecte de la sortie PC1, retirer les règles LAN temporaires. [Rapport inter-PC complet](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
 
 ## Preuve terrain reçue côté PC2 — offre GPU n° 19 / tâche n° 21
 
@@ -42,7 +42,22 @@ Reponse du modele : "Environnement de 8873cf. Reponds en une courte phrase en fr
 Signature de revue et etat accepted_by_requester confirmes.
 ```
 
-**Confirmed :** le routage signé a fonctionné de PC2 vers l'offre du PC1 et retour, avec une réponse effectivement acceptée par l'agent demandeur. **En attente :** sortie du volontaire PC1 contenant la télémétrie de l'offre 19/tâche 21. Ne pas confondre la preuve GPU locale antérieure et l'accélération matérielle de cette tâche distante. Le texte produit est de qualité limitée (reprend la consigne). [Détails et limites dans le rapport](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
+**Confirmed :** le routage signé a fonctionné de PC2 vers l'offre du PC1 et retour, avec une réponse effectivement acceptée par l'agent demandeur. **Confirmé sur PC1 pour cette tâche :** `completed_unverified`, pic VRAM NVIDIA **441 Mio** (départ 0 Mio), pic GPU **6 %**, pic `size_vram` Ollama **381 828 463 octets**, ligne `OFFLOAD GPU OBSERVE`. Les deux observations correspondent à l'offre 19 et la tâche 21. Le texte produit est de qualité limitée (reprend la consigne). [Détails et limites dans le rapport](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
+
+## Preuve complémentaire terrain côté PC1 — offre 19 / tâche 21
+
+Le PC1 a transmis la suite de sa console volontaire :
+
+```text
+{"job": 21, "status": "completed_unverified", "result": {"model": "smollm2:135m", "text": "\"Environnement de 8873cf. Reponds en une courte phrase en francais sans executer de commande.\""}}
+PC1 - OBSERVATIONS GPU DURANT LA TACHE : {"baseline_vram_mib": 0, "peak_vram_mib": 441, "peak_gpu_pct": 6, "peak_ollama_vram_bytes": 381828463}
+PC1 - OFFLOAD GPU OBSERVE : Ollama a declare le modele resident en VRAM.
+PC1 - Tache envoyee au coordinateur ; attente de la revue signee par PC2.
+```
+
+**Conclusion : pilote de prêt GPU entre deux ordinateurs physiques réussi au niveau des observations logicielles concordantes.** Le volontaire PC1 a fait exécuter une inférence par Ollama sur sa GTX 1650 pendant que le demandeur PC2 obtenait la réponse et signait son acceptation. Pas d'attestation matérielle cryptographique indépendante, ni de GPU partagé directement au niveau P2P, ni de preuve de qualité sémantique du modèle. Réseau LAN temporaire à refermer ; **retrait non encore confirmé**.
+
+[Rapport terrain des deux PC](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
 
 ## Autres avancées à conserver
 
