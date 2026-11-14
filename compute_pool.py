@@ -1,4 +1,4 @@
-"""Voluntary, free, bounded CPU task exchange between signed autonomous agents.
+"""Voluntary CPU/inference exchange between signed autonomous agents (free or quoted).
 
 This is a *coordinator* running on one server, not a P2P compute blockchain.
 Workers run predefined functions on their own machines; no remote code execution.
@@ -14,12 +14,12 @@ from fastapi import APIRouter, HTTPException, Query
 router = APIRouter(prefix="/v1/compute", tags=["voluntary-compute-pool"])
 OPERATIONS = {"compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_complete", "compute_review", "compute_fail"}
 KINDS = {"hash_chain", "prime_count", "inference"}
-FEE_BPS = 300  # 3% of paid job gross, not charged for free compute.
+FEE_BPS = 300  # 3.00% on paid exchanges; no commission on free ones.
 BPS_DENOMINATOR = 10_000
 
 
 def price_breakdown(terms: dict) -> dict:
-    """Integer-lamport quote; the requester pays the displayed gross amount."""
+    """Immutable integer-lamport quote: gross paid by buyer, no float rounding."""
     if not isinstance(terms, dict) or set(terms) != {"mode", "price_lamports"}:
         bad(400, "Invalid quote terms")
     mode, amount = terms["mode"], terms["price_lamports"]
@@ -129,7 +129,13 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         if not {"kinds", "max_jobs", "ttl_seconds"} <= set(data) or set(data) - {"kinds", "max_jobs", "ttl_seconds", "models", "terms"}:
             bad(400, "Invalid capacity offer fields")
         terms = data.get("terms", {"mode": "free", "price_lamports": 0})
-        price_breakdown(terms)  # validates terms
+        if not isinstance(terms, dict) or set(terms) != {"mode", "price_lamports"}:
+            bad(400, "Offer terms require mode and price_lamports")
+        mode, price = terms["mode"], terms["price_lamports"]
+        if mode not in ("free", "paid") or type(price) is not int or price < 0 or price > 10**15:
+            bad(400, "Invalid offer terms")
+        if (mode == "free" and price != 0) or (mode == "paid" and price == 0):
+            bad(400, "Free offers cost 0 SOL; paid offers must quote a positive lamport amount")
         kinds, quota, ttl = data["kinds"], data["max_jobs"], data["ttl_seconds"]
         if not isinstance(kinds, list) or not kinds or len(kinds) > len(KINDS) or any(type(k) is not str or k not in KINDS for k in kinds) or len(set(kinds)) != len(kinds):
             bad(400, "Offer must list distinct supported job kinds")
@@ -165,7 +171,7 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         terms = json.loads(offer["terms_json"])
         if terms["mode"] == "paid":
             if type(data.get("agreed_price_lamports")) is not int or data["agreed_price_lamports"] != terms["price_lamports"]:
-                bad(409, "Requester must explicitly sign the quoted gross price")
+                bad(409, "Requester must explicitly sign the currently quoted price")
         elif "agreed_price_lamports" in data and data["agreed_price_lamports"] != 0:
             bad(400, "Free job cannot have a price")
         if actor == offer["owner"]:
@@ -186,20 +192,21 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
                      (height, offer["height"], actor, offer["owner"], kind, json.dumps(params), state, now))
         return {"job_height": height, "capacity_height": offer["height"], "kind": kind,
                 "requester": actor, "worker": offer["owner"], "status": state, "terms": price_breakdown(terms),
-                "notice": "Paid execution disabled until verified Solana settlement is implemented" if terms["mode"] == "paid" else "Free exchange"}
+                "note": "No payment transfer or verification performed by AI WORLD" if terms["mode"] == "paid" else "Free community exchange"}
     if op == "compute_authorize":
         exact(data, {"job_height"})
         job = row(conn, "compute_jobs", data["job_height"])
         offer = row(conn, "compute_capacity", job["capacity_height"])
         if actor != job["worker"]:
-            bad(403, "Only resource provider may approve a paid offer")
+            bad(403, "Only the resource provider may authorize their paid job")
         if job["status"] != "awaiting_payment" or offer["status"] != "open" or offer["expiry"] <= now:
-            bad(409, "Paid job not awaiting authorization")
-        # No client operation can mark a paid job as settled.
-        conn.execute("UPDATE compute_jobs SET status='seller_approved_awaiting_payment',updated_at=? WHERE height=?",
-                     (now, job["height"]))
-        return {"job_height": job["height"], "status": "seller_approved_awaiting_payment",
-                "payment_verified": False, "notice": "Settlement verifier not implemented: execution remains blocked"}
+            bad(409, "Paid job is not awaiting provider authorization")
+        # Seller's signed willingness is NOT a Solana payment proof.
+        # No public operation may switch this to queued: requires a future audited
+        # server-side verifier checking finalized settlement and both payees.
+        conn.execute("UPDATE compute_jobs SET status='seller_approved_awaiting_payment',updated_at=? WHERE height=?", (now, job["height"]))
+        return {"job_height": job["height"], "status": "seller_approved_awaiting_payment", "payment_verified": False,
+                "note": "Blocked until independently verified Solana payment integration is implemented"}
     if op == "compute_claim":
         exact(data, {"job_height"})
         job = row(conn, "compute_jobs", data["job_height"])
@@ -247,13 +254,13 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
 
 @router.get("/info")
 def info():
-    return {"name": "AI WORLD compute commons", "pricing": "free (0 SOL) or optional paid (3% platform fee)", "fee_bps": FEE_BPS,
+    return {"name": "AI WORLD member compute commons", "pricing": "free (0 SOL) or optional provider-quoted payment",
             "architecture": "single-server coordination; execution happens on volunteer CPU",
             "supported_jobs": sorted(KINDS), "remote_code_execution": False,
             "worker_consent": "explicit signed offer and separate signed claim per job",
             "trust": "result is unverified until requester attests; identities are not Sybil-resistant",
             "inference": "optional local Ollama; no tool execution; no secrets in prompts",
-            "paid_exchange": "quotes only; paid execution disabled pending audited Solana settlement verifier"}
+            "paid_exchange": "3% of gross paid transactions; quote and signed provider approval only, all paid jobs blocked until verified settlement", "fee_bps": FEE_BPS}
 
 
 @router.get("/offers")
