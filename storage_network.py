@@ -87,7 +87,7 @@ def get_capsule(client: httpx.Client, peer: dict, agent_id: str, digest: str) ->
 
 def backup(identity_path: Path, state_path: Path, peers: list[dict],
            min_copies: int = 2, manifest_path: Path | None = None,
-           transport=None) -> dict:
+           transport=None, capsule_path: Path | None = None) -> dict:
     if not 1 <= min_copies <= len(peers):
         raise ValueError("Minimum copies must be between 1 and number of miners")
     envelope = seal_bytes(identity_path, state_path.read_bytes())
@@ -120,6 +120,8 @@ def backup(identity_path: Path, state_path: Path, peers: list[dict],
               "capsule_sha256": digest, "created": envelope["created"],
               "replicas": successes, "minimum_copies": min_copies,
               "failed_peers": failures, "verified_by_readback": True}
+    if capsule_path is not None:
+        write_atomic(capsule_path, capsule, overwrite=False)
     if manifest_path is not None:
         identity = identity_from_file(identity_path)
         result["public_key"] = identity["public_key"]
@@ -283,6 +285,7 @@ def main() -> None:
     upload.add_argument("--peers", required=True, type=Path)
     upload.add_argument("--min-copies", type=int, default=2)
     upload.add_argument("--manifest", type=Path)
+    upload.add_argument("--capsule-out", type=Path)
     download = sub.add_parser("restore")
     download.add_argument("--identity", required=True, type=Path)
     download.add_argument("--peers", required=True, type=Path)
@@ -308,7 +311,8 @@ def main() -> None:
                     args.interval, args.once, args.manifest_dir)
         return
     if args.command == "backup":
-        report = backup(args.identity, args.state, peers, args.min_copies, args.manifest)
+        report = backup(args.identity, args.state, peers, args.min_copies,
+                        args.manifest, capsule_path=args.capsule_out)
     elif args.command == "restore":
         report = restore_latest(args.identity, args.out, peers, args.digest, args.force)
     else:
