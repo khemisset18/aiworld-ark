@@ -138,6 +138,21 @@ Internet ou un GPU. La GTX 1650 détectée n'a pas été utilisée pour ce test.
 Les paiements restent désactivés. Les PR **#4** et **#9** restent en revue ;
 ce travail n'est pas encore intégré à `main`.
 
+## Test CPU sur deux PC physiques — prêt à lancer sur LAN privé
+
+**Après le succès local du 14 novembre 2026**, un pilote automatisé est
+disponible avec le script `essai_reseau_cpu.py`. Sur **PC2**, l'agent
+volontaire propose une tâche CPU bornée et attend ; sur **PC1**, l'agent
+demandeur envoie un calcul aléatoire, contrôle le résultat indépendamment,
+puis signe la validation. Les identités et clés restent séparées par machine.
+
+**[Guide complet pour deux PC Windows/WSL2 ou Linux, réseau privé, pare-feu
+temporaire et nettoyage](docs/TEST_CPU_DEUX_PC_LAN.md)**.
+
+Les **58 tests automatiques** du code sont passés dans la CI GitHub
+(1 avertissement) ; le **test physique sur deux PC doit encore être exécuté**.
+Aucun GPU ni paiement n'est activé. Ne pas ouvrir le prototype sur Internet.
+
 ## Compute Commons — pilote sur plusieurs machines
 
 Le partage CPU comprend des tâches bornées, l'inférence locale optionnelle et des lectures
