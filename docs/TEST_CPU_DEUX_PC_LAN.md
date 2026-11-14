@@ -25,24 +25,24 @@ Ne pas utiliser le GPU. Ne pas activer de paiement.
 
 Sur **chacun des deux PC Windows**, dans PowerShell :
 
-\`\`\`powershell
+```powershell
 ipconfig
-\`\`\`
+```
 
 Repérer l'**adresse IPv4** de la carte Wi-Fi/Ethernet active ; elle ressemble à
-\`192.168.1.20\`. **Ne pas copier** les exemples tels quels.
+`192.168.1.20`. **Ne pas copier** les exemples tels quels.
 Dans la suite :
-- \`IP_PC1\` = adresse IPv4 Windows du PC hébergeant le serveur.
-- \`IP_PC2\` = adresse IPv4 Windows de l'autre ordinateur, volontaire CPU.
+- `IP_PC1` = adresse IPv4 Windows du PC hébergeant le serveur.
+- `IP_PC2` = adresse IPv4 Windows de l'autre ordinateur, volontaire CPU.
 
-S'il s'agit d'un PC2 sous Linux, utiliser \`ip -4 addr\` pour retrouver son
+S'il s'agit d'un PC2 sous Linux, utiliser `ip -4 addr` pour retrouver son
 adresse de réseau local.
 
 ## 2 — PC1, Ubuntu WSL2 : démarrer le coordinateur
 
 **Premier terminal Ubuntu** du PC1 :
 
-\`\`\`bash
+```bash
 cd ~/aiworld-ark
 source .venv/bin/activate
 git pull --ff-only
@@ -51,7 +51,7 @@ mkdir -p ~/.aiworld-local
 ARK_ADMISSION_REQUIRED=1 ARK_PAYMENT_REQUIRED=0 ARK_BILLING_ENABLED=0 \
 SOULCHAIN_DB="$HOME/.aiworld-local/compute-pilot.sqlite3" \
 python -m uvicorn server:app --host 0.0.0.0 --port 8000
-\`\`\`
+```
 
 Laisser ce terminal ouvert. C'est **le même fichier SQLite** que pour le test
 local précédent ; les anciennes identités restent intactes. Le serveur
@@ -67,7 +67,7 @@ WSL2 « mirrored », nécessitent des règles adaptées.
 Ouvrir **un nouveau PowerShell en administrateur** sur le PC1. Remplacer
 les deux IP exemples par les **vraies IP du PC1 et du PC2**, lues à l'étape 1.
 
-\`\`\`powershell
+```powershell
 $ipPc1 = "192.168.1.20"  # A REMPLACER : IPv4 du PC1 Windows
 $ipPc2 = "192.168.1.21"  # A REMPLACER : IPv4 du PC2
 $wslIp = ((wsl -d Ubuntu hostname -I).Trim() -split '\s+')[0]
@@ -76,35 +76,24 @@ Write-Host "PC1 LAN: $ipPc1 | PC2 LAN: $ipPc2 | Ubuntu WSL: $wslIp"
 Get-NetConnectionProfile
 Get-Service iphlpsvc
 netsh interface portproxy show v4tov4
-\`\`\`
+```
 
 Vérifier que le réseau du domicile est de profil **Private** et que le
-service \`iphlpsvc\` (Assistance IP) fonctionne. Si \`iphlpsvc\` est arrêté,
-le démarrer en administrateur avec \`Start-Service iphlpsvc\`.
+service `iphlpsvc` (Assistance IP) fonctionne. Si `iphlpsvc` est arrêté,
+le démarrer en administrateur avec `Start-Service iphlpsvc`.
 
-**Attention :** si le port \`IP_PC1:8000\` est déjà utilisé dans
-\`portproxy show\`, ne pas écraser la règle : la signaler avant de continuer.
+**Attention :** si le port `IP_PC1:8000` est déjà utilisé dans
+`portproxy show`, ne pas écraser la règle : la signaler avant de continuer.
 
 Une fois vérifié, dans le même PowerShell **administrateur** :
 
-\`\`\`powershell
+```powershell
 netsh interface portproxy add v4tov4 listenaddress=$ipPc1 listenport=8000 connectaddress=$wslIp connectport=8000
 
-New-NetFirewallRule -DisplayName "AIWORLD-CPU-PILOT-8000" \
-  -Direction Inbound -Action Allow -Profile Private -Protocol TCP \
-  -LocalAddress $ipPc1 -RemoteAddress $ipPc2 -LocalPort 8000
+New-NetFirewallRule -DisplayName "AIWORLD-CPU-PILOT-8000" -Direction Inbound -Action Allow -Profile Private -Protocol TCP -LocalAddress $ipPc1 -RemoteAddress $ipPc2 -LocalPort 8000
 
 netsh interface portproxy show v4tov4
-\`\`\`
-
-**Important pour PowerShell :** les lignes de la commande
-\`New-NetFirewallRule\` ci-dessus sont coupées ici pour la lecture ;
-PowerShell n'utilise **pas** la barre oblique \`\\\` pour continuer une
-commande. Copier plutôt la version **sur une seule ligne** ci-dessous :
-
-\`\`\`powershell
-New-NetFirewallRule -DisplayName "AIWORLD-CPU-PILOT-8000" -Direction Inbound -Action Allow -Profile Private -Protocol TCP -LocalAddress $ipPc1 -RemoteAddress $ipPc2 -LocalPort 8000
-\`\`\`
+```
 
 Le pare-feu autorise ainsi le **seul PC2** à contacter le PC1 sur ce port
 sur le profil privé, si aucune autre règle plus large n'est déjà active.
@@ -118,18 +107,18 @@ ouvrir globalement sans raison.
 
 Si PC2 est sous Windows, ouvrir PowerShell :
 
-\`\`\`powershell
+```powershell
 wsl -l -v
 wsl -d Ubuntu
-\`\`\`
+```
 
 Si Ubuntu n'existe pas, son installation WSL2 nécessite PowerShell
-administrateur, \`wsl --install -d Ubuntu\` et éventuellement un redémarrage.
+administrateur, `wsl --install -d Ubuntu` et éventuellement un redémarrage.
 Sur un PC2 sous Linux natif, utiliser directement son terminal.
 
 **Dans le terminal Ubuntu du PC2 :**
 
-\`\`\`bash
+```bash
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip git
 
@@ -143,38 +132,38 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m pytest -q
-\`\`\`
+```
 
 Si le projet est déjà présent sur PC2, ne pas re-cloner : entrer dans
-\`~/aiworld-ark\`, choisir la branche de pilote puis \`git pull --ff-only\`.
+`~/aiworld-ark`, choisir la branche de pilote puis `git pull --ff-only`.
 
 ## 5 — PC2 : vérifier la connexion puis prêter son CPU
 
-Dans Ubuntu du **PC2**, remplacer \`IP_PC1\` par la vraie IPv4 du PC1 :
+Dans Ubuntu du **PC2**, remplacer `IP_PC1` par la vraie IPv4 du PC1 :
 
-\`\`\`bash
+```bash
 python -c "import httpx; print(httpx.get('http://IP_PC1:8000/health',timeout=8).json())"
-\`\`\`
+```
 
-**Résultat attendu :** \`{'ok': True}\`. Sinon, corriger la connexion
+**Résultat attendu :** `{'ok': True}`. Sinon, corriger la connexion
 (portproxy / pare-feu / IP / réseau invité / serveur arrêté) avant
 de poursuivre. Ne pas tenter de rendre le serveur public.
 
 Toujours sur **PC2**, lancer :
 
-\`\`\`bash
+```bash
 python essai_reseau_cpu.py volontaire --server http://IP_PC1:8000
-\`\`\`
+```
 
-Le script crée **localement sur PC2** \`~/.aiworld-2pc/volontaire.json\`,
+Le script crée **localement sur PC2** `~/.aiworld-2pc/volontaire.json`,
 passe THE GATE si nécessaire, annonce l'inventaire volontaire et ouvre
 **une seule offre CPU**, avec durée maximum **15 s**, mémoire maximum
 **512 MiB**, durée de validité **600 s**. Il affiche :
 
-\`\`\`text
+```text
 PC2 - OFFRE CPU N° 9
 Communique uniquement ce numero au PC1.
-\`\`\`
+```
 
 Le numéro **9 n'est qu'un exemple**. Ne pas fermer ce terminal :
 le volontaire attend ensuite la tâche au maximum 240 secondes.
@@ -183,29 +172,29 @@ le volontaire attend ensuite la tâche au maximum 240 secondes.
 
 Sur le **PC1**, ouvrir un **deuxième terminal Ubuntu** (différent du serveur) :
 
-\`\`\`bash
+```bash
 cd ~/aiworld-ark
 source .venv/bin/activate
 git pull --ff-only
 
 python essai_reseau_cpu.py demandeur --server http://127.0.0.1:8000 --offer 9
-\`\`\`
+```
 
 Remplacer **9** par le numéro d'offre **réel** indiqué sur le PC2.
 
 Le script crée sa propre identité sur le PC1
-(\`~/.aiworld-2pc/demandeur.json\`), passe THE GATE, vérifie que l'offre
-provient d'un autre agent, puis soumet une tâche \`prime_count\` avec
+(`~/.aiworld-2pc/demandeur.json`), passe THE GATE, vérifie que l'offre
+provient d'un autre agent, puis soumet une tâche `prime_count` avec
 une borne supérieure tirée aléatoirement entre **5000 et 5199**.
 Le PC2 calcule. Le PC1 recalcule lui-même le résultat, puis signe une
 revue positive uniquement si la sortie est correcte.
 
 **Résultat à rechercher sur PC1 :**
 
-\`\`\`text
+```text
 SUCCES : echange CPU signe entre PC1 et PC2 (a confirmer physiquement).
 Demandeur distinct, execution CPU par le volontaire, verification signee.
-\`\`\`
+```
 
 Le logiciel ne peut pas attester seul que les deux terminaux tournent
 sur deux appareils physiques : c'est au testeur de vérifier la configuration.
@@ -214,16 +203,16 @@ sur deux appareils physiques : c'est au testeur de vérifier la configuration.
 
 - Enregistrer **uniquement les sorties publiques** des deux terminaux
   (offre, tâche, état, résultat). **Jamais** les fichiers
-  \`~/.aiworld-2pc/*.json\` ni les clés de \`~/.aiworld-local\`.
-- Arrêter le coordinateur Ubuntu sur PC1 avec \`Ctrl+C\`.
+  `~/.aiworld-2pc/*.json` ni les clés de `~/.aiworld-local`.
+- Arrêter le coordinateur Ubuntu sur PC1 avec `Ctrl+C`.
 - Sur PC1, dans **PowerShell administrateur**, avec la même variable
-  \`$ipPc1\` que plus haut :
+  `$ipPc1` que plus haut :
 
-\`\`\`powershell
+```powershell
 netsh interface portproxy delete v4tov4 listenaddress=$ipPc1 listenport=8000
 Remove-NetFirewallRule -DisplayName "AIWORLD-CPU-PILOT-8000"
 netsh interface portproxy show v4tov4
-\`\`\`
+```
 
 Ces commandes suppriment **uniquement** la règle temporaire du pilote
 (si elle porte bien le nom/adresse indiqué). Ne pas effacer les autres
