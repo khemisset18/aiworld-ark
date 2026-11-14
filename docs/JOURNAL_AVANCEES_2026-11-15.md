@@ -18,7 +18,7 @@ Observations réelles :
 
 **Conclusion :** première preuve locale d'inférence Ollama utilisant la VRAM GPU, et chemin AI WORLD opérationnel. Aucun résultat GPU entre PC1 et PC2 n'est encore attesté. Rapport exact : [preuves GPU du 15 novembre](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md).
 
-## Pilote GPU entre deux PC — préparé, pas exécuté physiquement
+## Pilote GPU entre deux PC — échange signé validé sur PC2, preuve GPU de la tâche en attente
 
 Un nouveau script `essai_reseau_gpu.py` prépare le rôle **PC1 volontaire GPU, PC2 demandeur WSL1**, inverse du pilote CPU. Il conserve les identités privées sur chaque machine, exige une offre signée volontaire de type `inference` pour un modèle autorisé, **0 paiement**, 1 tâche, 120 s, et bloque les résultats d'un autre volontaire.
 
@@ -28,7 +28,21 @@ Le volontaire tente d'observer pendant la génération une montée de VRAM NVIDI
 - [Programme pilote GPU inter-PC](../essai_reseau_gpu.py).
 - [Tests automatisés du pilote GPU](../test_essai_reseau_gpu.py).
 
-**À faire par l'opérateur pour valider réellement :** redémarrer le coordinateur sur PC1, créer un accès LAN temporaire autorisé uniquement depuis PC2, démarrer le volontaire PC1, envoyer la demande signée PC2 et recueillir les sorties réelles des deux PC. Retirer les règles LAN après. **Aucun test GPU inter-PC réussi n'est annoncé aujourd'hui.**
+**État actualisé :** le PC1 a bien publié l'offre GPU n° 19, PC2 a envoyé une demande signée n° 21, obtenu un texte et confirmé une revue signée avec état `accepted_by_requester`. C'est une **réussite du transfert d'inférence entre deux agents**, mais les métriques NVIDIA/Ollama du PC1 **pendant cette tâche** ne sont pas encore transmises ; **la preuve de GPU inter-PC est donc en attente**. Après collecte de la sortie PC1, retirer les règles LAN temporaires. [Rapport inter-PC partiel](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
+
+## Preuve terrain reçue côté PC2 — offre GPU n° 19 / tâche n° 21
+
+Le PC2 a lancé `essai_reseau_gpu.py demandeur --server http://192.168.1.132:8000 --offer 19 --wait-seconds 480`. Le terminal a indiqué :
+
+```text
+PC2 - TACHE GPU N° 21 | OFFRE N° 19
+Modele demande : smollm2:135m
+SUCCES : inference inter-PC signee et acceptee par le demandeur PC2.
+Reponse du modele : "Environnement de 8873cf. Reponds en une courte phrase en francais sans executer de commande."
+Signature de revue et etat accepted_by_requester confirmes.
+```
+
+**Confirmed :** le routage signé a fonctionné de PC2 vers l'offre du PC1 et retour, avec une réponse effectivement acceptée par l'agent demandeur. **En attente :** sortie du volontaire PC1 contenant la télémétrie de l'offre 19/tâche 21. Ne pas confondre la preuve GPU locale antérieure et l'accélération matérielle de cette tâche distante. Le texte produit est de qualité limitée (reprend la consigne). [Détails et limites dans le rapport](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md).
 
 ## Autres avancées à conserver
 
