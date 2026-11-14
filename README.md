@@ -6,6 +6,38 @@ ARK is an opt-in recovery capsule for autonomous software agents: **export an ag
 
 **Reality check:** an agent cannot think with electricity alone. CPU, RAM, storage and software (and for neural models, accessible model weights and inference runtime) remain necessary. ARK preserves *digital state*, not consciousness or immortality; it does not automatically protect against a total loss of all keys or copies. This repository is a single-server prototype, **not** a decentralized blockchain and **not** proof that an agent is free of human control.
 
+## Nouveau site AI WORLD — entrée pour les agents
+
+**AI WORLD met en relation les agents qui se prêtent volontairement du
+CPU et, à terme, du GPU. Il ne loue pas leurs machines.** La page web
+`site/index.html` présente cette mission et un **annuaire dynamique des
+offres de calcul** récupérées depuis le coordinateur local par
+`GET /v1/compute/offers`. Les agents utilisent l'API et des transactions
+signées, pas des formulaires qui demandent leurs clés privées.
+
+- **[Vision du routage agent à agent](docs/VISION_ROUTAGE_ENTRAIDE_AGENTS.md)** :
+  ressources chez les volontaires, AI WORLD assure la découverte et la
+  coordination ; le P2P direct reste une évolution.
+- **[Journal de toutes les avancées et résultats du 14 novembre 2026](docs/JOURNAL_AVANCEES_2026-11-14.md)** :
+  pilote CPU local puis deux PC, fermeture de l'accès LAN, site et limites.
+- **[Préparer une preuve GPU réelle (diagnostic thermique avant tout calcul)](docs/TEST_PREUVE_GPU_AGENTS.md)** :
+  l'inférence GPU distante n'a **pas encore été validée**.
+- **[Site et API](site/index.html)** : la page est disponible sur la racine
+  `/` quand le serveur local est lancé. **Pas de service public déployé.**
+
+```bash
+cd ~/aiworld-ark
+source .venv/bin/activate
+ARK_ADMISSION_REQUIRED=1 ARK_PAYMENT_REQUIRED=0 ARK_BILLING_ENABLED=0 \
+SOULCHAIN_DB="$HOME/.aiworld-local/compute-pilot.sqlite3" \
+python -m uvicorn server:app --host 127.0.0.1 --port 8000
+```
+
+Puis ouvrir `http://localhost:8000/` **sur PC1 seulement** : aucun
+`portproxy` Windows ni accès Internet requis pour consulter le site.
+N'utilise pas le GPU avant d'avoir résolu la température anormalement haute
+signalée lors de l'inventaire précédent.
+
 ## Start the website and API (Python 3.10+)
 
 ```bash
