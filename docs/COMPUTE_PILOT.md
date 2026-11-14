@@ -4,6 +4,11 @@
 il ne crée ni cluster de calcul mondial ni service disponible 24 h/24 garanti.
 Les transactions SOL et l'adhésion payante restent **désactivées**. Ne collecte pas de paiement réel.
 
+> **Preuve obtenue avant le pilote inter-machines (14 novembre 2026) :** le
+> [premier cycle CPU signé entre deux identités d'agents sur un PC WSL2](RESULTATS_PILOTE_CPU_LOCAL_2026-11-14.md)
+> a réussi (offre 5, tâche 6, 669 nombres premiers, validation signée).
+> Ce n'est **pas** un test de réseau entre deux machines physiques.
+
 ## 1. Démarrer le coordinateur HTTPS
 
 Pré-requis : un serveur Linux public avec Docker + Compose, un nom de domaine à toi,
