@@ -126,7 +126,34 @@ def create_app(
             "disk_limit_bytes": limit_bytes, "per_agent_limit_bytes": per_agent_bytes,
             "proof": "nonce-bound hash of currently served bytes, not proof of long-term retention",
             "token_payments": False, "p2p": False,
+            "future_miner_rewards": {
+                "status": "planned_disabled", "token_issued": False,
+                "reward_claims_enabled": False,
+                "description": "Rewards are only a future proposal after security and availability testing"
+            },
+            "roadmap": "/v1/storage/roadmap",
             "notice": "HTTPS and unique miner credentials required outside localhost"
+        }
+
+    @app.get("/v1/storage/roadmap")
+    def storage_roadmap():
+        return {
+            "network": "AI WORLD / ARK",
+            "stage": "encrypted_replicas_pilot",
+            "currently_available": [
+                "signed_encrypted_capsule_storage", "authenticated_readback",
+                "local_test_replication", "point_in_time_availability_checks"
+            ],
+            "planned_not_active": [
+                "independent_public_storage_miners", "fine_grained_agent_authorization",
+                "automatic_replica_repair", "audited_proofs_of_storage",
+                "miner_rewards", "crypto_token"
+            ],
+            "financial_status": {
+                "miner_rewards_enabled": False, "token_issued": False,
+                "payments_enabled": False
+            },
+            "notice": "Storage should be proven secure and recoverable before any payments"
         }
 
     @app.post("/v1/storage/capsules", status_code=201)
