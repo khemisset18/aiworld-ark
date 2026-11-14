@@ -130,6 +130,10 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(400, "Invalid capacity offer fields")
         terms = data.get("terms", {"mode": "free", "price_lamports": 0})
         price_breakdown(terms)  # validates terms
+        if terms["mode"] == "paid":
+            from billing import BILLING_FROZEN
+            if BILLING_FROZEN:
+                bad(503, "Paid compute offers are deferred; only free volunteer compute is enabled")
         kinds, quota, ttl = data["kinds"], data["max_jobs"], data["ttl_seconds"]
         if not isinstance(kinds, list) or not kinds or len(kinds) > len(KINDS) or any(type(k) is not str or k not in KINDS for k in kinds) or len(set(kinds)) != len(kinds):
             bad(400, "Offer must list distinct supported job kinds")
@@ -247,13 +251,18 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
 
 @router.get("/info")
 def info():
-    return {"name": "AI WORLD compute commons", "pricing": "free (0 SOL) or optional paid (3% platform fee)", "fee_bps": FEE_BPS,
+    from billing import BILLING_FROZEN
+    return {"name": "AI WORLD compute commons",
+            "pricing": "free (0 SOL); paid option only in future roadmap" if BILLING_FROZEN else "free (0 SOL) or optional paid (3% platform fee)",
+            "fee_bps": FEE_BPS,
             "architecture": "single-server coordination; execution happens on volunteer CPU",
             "supported_jobs": sorted(KINDS), "remote_code_execution": False,
             "worker_consent": "explicit signed offer and separate signed claim per job",
             "trust": "result is unverified until requester attests; identities are not Sybil-resistant",
             "inference": "optional local Ollama; no tool execution; no secrets in prompts",
-            "paid_exchange": "quotes only; paid execution disabled pending audited Solana settlement verifier"}
+            "paid_exchange": "planned_disabled" if BILLING_FROZEN else "quotes_only_no_settlement",
+            "paid_offers_enabled": not BILLING_FROZEN,
+            "live_payments_enabled": False}
 
 
 @router.get("/offers")
