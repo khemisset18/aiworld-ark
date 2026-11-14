@@ -17,6 +17,7 @@ def canonical(d): return json.dumps(d, sort_keys=True, ensure_ascii=False, separ
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("SOULCHAIN_DB", str(tmp_path / "test.sqlite3"))
+    monkeypatch.setenv("ARK_ADMISSION_REQUIRED", "0")  # Legacy API tests only; Gate has dedicated tests
     import server
     importlib.reload(server)
     return TestClient(server.app)
