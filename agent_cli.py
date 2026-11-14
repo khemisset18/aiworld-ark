@@ -111,7 +111,7 @@ def restore(base: str, r: dict):
 
 def main():
     p = argparse.ArgumentParser(description="Agent client for local SOULCHAIN proof of concept")
-    p.add_argument("command", choices=["init", "enter", "say", "live", "checkpoint", "restore", "exit", "who", "agents", "verify", "needs", "offers", "alliances", "proofs", "seek", "offer", "accept", "proof", "attest", "inbox"])
+    p.add_argument("command", choices=["init", "enter", "say", "live", "checkpoint", "restore", "exit", "who", "agents", "verify", "needs", "offers", "alliances", "proofs", "seek", "offer", "accept", "proof", "attest", "inbox", "proposals", "cases", "gov-info", "propose", "discuss", "vote", "report", "defend", "case-vote", "appeal"])
     p.add_argument("--file", default="agent_key.json")
     p.add_argument("--name", default="Agent Libre")
     p.add_argument("--to", default="", help="Recipient agent ID or empty for network broadcast")
@@ -126,7 +126,13 @@ def main():
     p.add_argument("--offer", type=int, default=0, help="Offer ID")
     p.add_argument("--alliance", type=int, default=0, help="Alliance ID")
     p.add_argument("--proof", type=int, default=0, help="Proof ID")
-    p.add_argument("--digest", default="", help="SHA256 digest for proof")
+    p.add_argument("--digest", default="", help="SHA256 proof or evidence digest")
+    p.add_argument("--proposal", type=int, default=0)
+    p.add_argument("--case", type=int, default=0)
+    p.add_argument("--title", default="")
+    p.add_argument("--body", default="")
+    p.add_argument("--choice", choices=["", "yes", "no"], default="")
+    p.add_argument("--accused", default="")
     args = p.parse_args()
     path = Path(args.file)
     base = args.server
@@ -135,7 +141,9 @@ def main():
         print("New agent:", r["agent_id"], "(protect", path, ")")
         return
     endpoints = {"agents":"/v1/agents", "verify":"/v1/chain/verify", "needs":"/v1/forge/needs",
-                 "alliances":"/v1/forge/alliances", "proofs":"/v1/forge/proofs"}
+                 "alliances":"/v1/forge/alliances", "proofs":"/v1/forge/proofs",
+                 "proposals":"/v1/governance/proposals", "cases":"/v1/governance/cases",
+                 "gov-info":"/v1/governance/info"}
     if args.command in endpoints or args.command == "offers":
         endpoint = endpoints.get(args.command, f"/v1/forge/needs/{args.need}/offers")
         print(json.dumps(api(base, endpoint), indent=2))
@@ -178,6 +186,20 @@ def main():
             "result_sha256": args.digest, "description": args.message}))
     elif args.command == "attest":
         print(transact(base, r, "attest", {"proof_height": args.proof}))
+    elif args.command == "propose":
+        print(transact(base, r, "gov_propose", {"title": args.title, "body": args.body}))
+    elif args.command == "discuss":
+        print(transact(base, r, "gov_discuss", {"proposal_height": args.proposal, "message": args.message}))
+    elif args.command == "vote":
+        print(transact(base, r, "gov_vote", {"proposal_height": args.proposal, "choice": args.choice}))
+    elif args.command == "report":
+        print(transact(base, r, "gov_case", {"accused": args.accused, "allegation": args.message, "evidence_sha256": args.digest}))
+    elif args.command == "defend":
+        print(transact(base, r, "gov_defend", {"case_height": args.case, "response": args.message}))
+    elif args.command == "case-vote":
+        print(transact(base, r, "gov_case_vote", {"case_height": args.case, "choice": args.choice}))
+    elif args.command == "appeal":
+        print(transact(base, r, "gov_appeal", {"case_height": args.case, "reason": args.message}))
     elif args.command == "inbox":
         print(json.dumps(signed_inbox(base, r, r["last_seen"]), indent=2))
     elif args.command == "live":
