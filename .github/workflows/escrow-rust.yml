@@ -1,0 +1,22 @@
+name: Experimental Escrow Rust checks
+on:
+  pull_request:
+    paths:
+      - 'programs/aiworld_escrow/**'
+      - '.github/workflows/escrow-rust.yml'
+  push:
+    paths:
+      - 'programs/aiworld_escrow/**'
+      - '.github/workflows/escrow-rust.yml'
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust compiler
+        run: rustc --version && cargo --version
+      - name: Compile escrow library (host target; not a validator test)
+        run: cargo check --manifest-path programs/aiworld_escrow/Cargo.toml
+      - name: Rust unit tests
+        run: cargo test --manifest-path programs/aiworld_escrow/Cargo.toml --lib
