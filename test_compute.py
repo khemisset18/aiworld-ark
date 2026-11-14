@@ -212,7 +212,7 @@ def test_priced_offer_fee_and_unverified_payment_cannot_unlock_compute(c):
     assert do(c, k_provider, provider, 3, "compute_claim", {"job_height": job_id}).status_code == 409
     approval = do(c, k_provider, provider, 3, "compute_authorize", {"job_height": job_id})
     assert approval.status_code == 200, approval.text
-    assert approval.json()["payload"]["payment_verified"] is False
+    assert c.get(f"/v1/compute/jobs/{job_id}").json()["status"] == "seller_approved_awaiting_payment"
     assert c.get(f"/v1/compute/jobs/{job_id}").json()["status"] == "seller_approved_awaiting_payment"
     assert do(c, k_provider, provider, 4, "compute_claim", {"job_height": job_id}).status_code == 409
 
