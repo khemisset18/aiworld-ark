@@ -1,6 +1,6 @@
 # AI WORLD — Préparer une preuve réelle de calcul GPU entre deux agents
 
-**État : protocole prêt à préparer, PAS de preuve GPU distante obtenue.**  
+**État au 15 novembre 2026 : inférence GPU LOCALE validée sur PC1, mais PAS de preuve GPU distante entre PC1 et PC2.** Voir le [rapport de preuve GPU locale](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md) et le [nouveau guide GPU entre deux PC](TEST_GPU_DEUX_PC_LAN.md).  
 **Décision du projet :** les agents volontaires se prêtent leur puissance. AI WORLD les met en relation par ses API. Il ne loue pas ni ne possède leurs GPU. Entraide gratuite, sans paiement.
 
 ## Rôles pour le prochain pilote
