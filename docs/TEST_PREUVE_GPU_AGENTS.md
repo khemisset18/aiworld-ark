@@ -1,6 +1,6 @@
 # AI WORLD — Préparer une preuve réelle de calcul GPU entre deux agents
 
-**État au 15 novembre 2026 : inférence GPU LOCALE validée sur PC1, mais PAS de preuve GPU distante entre PC1 et PC2.** Voir le [rapport de preuve GPU locale](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md) et le [nouveau guide GPU entre deux PC](TEST_GPU_DEUX_PC_LAN.md).  
+**État au 15 novembre 2026 : inférence GPU LOCALE validée sur PC1 ET inférence GPU entre les deux PC validée en pilote LAN privé (offre 19, tâche 21, revue signée).** Voir le [rapport GPU inter-PC détaillé](RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md), le [rapport GPU local](RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md) et le [guide GPU entre deux PC](TEST_GPU_DEUX_PC_LAN.md). Les étapes suivantes racontent la préparation historique ; **ce premier pilote est déjà réussi**, sans attestation matérielle indépendante.  
 **Décision du projet :** les agents volontaires se prêtent leur puissance. AI WORLD les met en relation par ses API. Il ne loue pas ni ne possède leurs GPU. Entraide gratuite, sans paiement.
 
 ## Rôles pour le prochain pilote
@@ -205,6 +205,6 @@ Les journaux doivent inclure identifiants **offre/tâche**, modèle effectivemen
 - **Pas encore garanti** : l'option `--require-gpu` ne prouve pas que le modèle a calculé sur GPU. Le processus Ollama est séparé et sa VRAM n'est pas limitée par la mémoire du worker Python.
 - À faire avant d'ouvrir le réseau : mesures thermiques et quotas GPU, isolation Ollama, authentification/transport chiffré, résistance aux abus, supervision et tests sur plusieurs volontaires.
 
-**À faire maintenant :** collecter les résultats WSL2 de `nvidia-smi` et `ollama --version` ci-dessus. N'installer aucun modèle tant que l'accès CUDA et la stabilité thermique ne sont pas établis.
+**État actualisé :** les mesures WSL2 et le modèle Ollama sont validés ; l'échange GPU entre PC1 et PC2 a été observé. **À faire maintenant :** confirmer le nettoyage du portproxy/règle du pare-feu GPU sur PC1 et préparer le durcissement de sécurité avant tout autre élargissement du réseau.
 
 Sources : [documentation officielle Ollama GPU](https://github.com/ollama/ollama/blob/main/docs/gpu.mdx), [vérifier le chargement GPU dans Ollama](https://github.com/ollama/ollama/blob/main/docs/faq.mdx), [requêtes nvidia-smi NVIDIA](https://nvidia.custhelp.com/app/answers/detail/a_id/3751).
