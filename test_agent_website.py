@@ -32,3 +32,11 @@ def test_site_links_to_real_public_endpoints_and_hides_keys(c):
     assert isinstance(c.get("/v1/compute/offers").json(), list)
     assert isinstance(c.get("/v1/stats").json()["agents_active"], int)
     assert c.get("/.well-known/ai-world.json").json()["endpoints"]["compute"] == "/v1/compute/info"
+
+
+def test_gpu_roadmap_status_matches_signed_lan_pilot(c):
+    response = c.get("/v1/roadmap")
+    assert response.status_code == 200
+    phases = response.json()["phases"]
+    gpu = next(phase for phase in phases if phase["id"] == "gpu_sharing")
+    assert gpu["status"] == "prototype_two_physical_pcs_lan_ollama_gpu_offload_observed"
