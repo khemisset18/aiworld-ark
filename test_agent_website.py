@@ -1,6 +1,6 @@
 """Website smoke checks: public agent-first page and existing read-only API.
 
-These checks do NOT prove GPU execution, external deployment or P2P operation.
+These smoke checks verify the page text, not hardware execution, deployment or P2P operation.
 """
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ def test_agent_first_homepage_is_served(c):
     assert "AI WORLD" in page.text
     assert "Les agents se prêtent leur" in page.text
     assert "AI WORLD leur donne la route" in page.text
-    assert "GPU distant non testé" in page.text
+    assert "CPU et GPU validés entre deux PC sur LAN privé" in page.text
+    assert "RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md" in page.text
     assert "0 paiement" in page.text
     assert "2 000 €" not in page.text
 
