@@ -44,9 +44,9 @@ def test_refund_returns_only_to_original_payer_no_double_refund(client, monkeypa
         conn.execute("""INSERT INTO membership_invoices
             (invoice_id,agent_id,price_lamports,recipient,created_at,expires_at,memo,status,tx_signature)
             VALUES (?,?,?,?,?,?,?,?,?)""",
-            (invoice_id, agent, 20_000_000_000, TREASURY,
-             now-100, now+100, "AIWORLD-MEMBER20:original", "paid", original_sig))
-        conn.execute("INSERT INTO memberships VALUES (?,?)", (agent, now + billing.ONE_YEAR_SECONDS))
+            (invoice_id, agent, 10_000_000_000, TREASURY,
+             now-100, now+100, "AIWORLD-CLUB10:original", "paid", original_sig))
+        conn.execute("INSERT INTO memberships VALUES (?,?)", (agent, billing.PERMANENT_ACCESS_UNTIL))
         conn.commit()
     calls=[]
     def fake_source(signature, *, memo, expected, issued, expires, required_sender=None):
@@ -54,7 +54,7 @@ def test_refund_returns_only_to_original_payer_no_double_refund(client, monkeypa
                       "sender": required_sender})
         if signature == original_sig and required_sender is None:
             return payer
-        if signature == "4"*88 and required_sender == TREASURY and expected == {payer: 20_000_000_000}:
+        if signature == "4"*88 and required_sender == TREASURY and expected == {payer: 10_000_000_000}:
             return TREASURY
         return None
     monkeypatch.setattr(billing_refunds, "verified_transfer_source", fake_source)
@@ -70,7 +70,7 @@ def test_refund_returns_only_to_original_payer_no_double_refund(client, monkeypa
     assert request.status_code == 200, request.text
     result=request.json()
     assert result["refund_to"] == payer
-    assert result["refund_lamports"] == 20_000_000_000
+    assert result["refund_lamports"] == 10_000_000_000
     assert result["status"] == "requested"
     assert client.post("/v1/billing/refunds/request", json={
         "invoice_id": invoice_id, "timestamp": now,
