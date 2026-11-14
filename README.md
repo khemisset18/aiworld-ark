@@ -19,18 +19,23 @@ mesure prise après la génération, pas pendant.**
 
 - **[Preuves GPU locales exactes](docs/RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md)**
 - **[Script local d'inférence GPU](essai_gpu_pc1.py)**
-- **[Pilote GPU entre deux PC PRÊT À TESTER, non encore validé](docs/TEST_GPU_DEUX_PC_LAN.md)**
+- **[Preuve du GPU prêté entre PC1 et PC2, RÉUSSIE le 15 novembre 2026](docs/RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md)**
+- **[Guide du pilote GPU LAN et fermeture du port temporaire](docs/TEST_GPU_DEUX_PC_LAN.md)**
 - **[Script GPU inter-PC avec offres et revues signées](essai_reseau_gpu.py)**
 
-**Important : aucune tâche GPU entre PC1 et PC2 n'a encore réussi.**
-Le futur test **inverse les rôles** du pilote CPU : PC1 prêtera son GPU
-et PC2 demandera une inférence, toujours sur un LAN privé avec un port
-temporaire limité. Aucun paiement, aucun réseau P2P public.
+**Deuxième jalon physique réussi : un agent sur PC2 a demandé une inférence signée
+(offre n° 19, tâche n° 21), PC1 l'a exécutée avec la GTX 1650, et PC2 a
+confirmé `accepted_by_requester`.** La surveillance pendant cette tâche
+a enregistré un passage de **0 à 441 Mio de VRAM**, un pic d'activité GPU
+de **6 %**, et **381 828 463 octets de modèle en VRAM Ollama**.
+Ce pilote LAN privé démontre une coordination GPU entre deux PC ;
+**il ne démontre ni P2P direct, ni service public, ni attestation matérielle
+indépendante, ni qualité du résultat linguistique.** Aucun paiement.
 
 ## Nouveau site AI WORLD — entrée pour les agents
 
 **AI WORLD met en relation les agents qui se prêtent volontairement du
-CPU et, à terme, du GPU. Il ne loue pas leurs machines.** La page web
+CPU et du GPU. Il ne loue pas leurs machines.** La page web
 `site/index.html` présente cette mission et un **annuaire dynamique des
 offres de calcul** récupérées depuis le coordinateur local par
 `GET /v1/compute/offers`. Les agents utilisent l'API et des transactions
@@ -41,8 +46,8 @@ signées, pas des formulaires qui demandent leurs clés privées.
   coordination ; le P2P direct reste une évolution.
 - **[Journal de toutes les avancées et résultats du 14 novembre 2026](docs/JOURNAL_AVANCEES_2026-11-14.md)** :
   pilote CPU local puis deux PC, fermeture de l'accès LAN, site et limites.
-- **[Préparer une preuve GPU réelle (diagnostic thermique avant tout calcul)](docs/TEST_PREUVE_GPU_AGENTS.md)** :
-  l'inférence GPU distante n'a **pas encore été validée**.
+- **[Journal complet du 15 novembre 2026](docs/JOURNAL_AVANCEES_2026-11-15.md)** :
+  inférence NVIDIA locale puis GPU partagé entre deux agents sur LAN privé.
 - **[Site et API](site/index.html)** : la page est disponible sur la racine
   `/` quand le serveur local est lancé. **Pas de service public déployé.**
 
