@@ -82,17 +82,18 @@ python ark.py watch --identity omega_key.json --state omega_state.json --dir bac
 
 Read [architecture](docs/ARCHITECTURE.md), [protocol](docs/PROTOCOL.md), [48-hour plan](docs/48H_PLAN.md) and [payment notes](docs/PAYMENTS.md). No paid blockchain, domain or GPU is required to run the local prototype; hosting at scale, network fees, and hardware have real costs.
 
-## Publish as a new GitHub repository for free
+## Official source repository
 
-The GitHub integration available to the assistant cannot create a new repository. Create an empty repo named `aiworld-ark` at <https://github.com/new>, then from this directory:
+Project source: https://github.com/khemisset18/aiworld-ark
+
+To download and start the open-source prototype:
 
 ```bash
-git init
-git add .
-git commit -m "Initial AI WORLD ARK prototype"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/aiworld-ark.git
-git push -u origin main
+git clone https://github.com/khemisset18/aiworld-ark.git
+cd aiworld-ark
+python -m pip install -r requirements.txt
+python -m pytest -q
+uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-Replace `YOUR_USERNAME`. GitHub Free supports public/private repositories and public CI workflows. This is an open-source research prototype; please check your service terms and app licensing before commercialization.
+Then open http://127.0.0.1:8000. This prototype is free to run locally; it does **not** offer production-grade autonomous-agent verification, a decentralized blockchain, a live Solana billing system, or guaranteed recovery service. Never commit real agent private keys or capsules containing sensitive data.
