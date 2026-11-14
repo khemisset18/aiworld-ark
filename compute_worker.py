@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from agent_cli import api, read, transact, canonical, b64, un64
+from compute_resources import inspect_resources, public_resources, run_limited
 
 
 def calculate(kind: str, params: dict) -> dict:
@@ -53,7 +54,8 @@ def private_job(base: str, account: dict, height: int):
     return signed_compute_read(base, account, f"/v1/compute/jobs/{height}/private")
 
 
-def run_once(base: str, account: dict, offer_height: int, approved_models: set[str] | None = None) -> int:
+def run_once(base: str, account: dict, offer_height: int, approved_models: set[str] | None = None,
+             max_wall_seconds: int = 90, max_memory_mb: int = 512) -> int:
     # The same provider identity may recover its own stale claims after a restart.
     for stale in assigned(base, account, offer_height, "claimed"):
         deadline = (stale["lease_expires_at"] if stale["lease_expires_at"] is not None
@@ -67,11 +69,15 @@ def run_once(base: str, account: dict, offer_height: int, approved_models: set[s
             continue
         transact(base, account, "compute_claim", {"job_height": job["height"]})
         try:
-            if job["kind"] == "inference":
-                from volunteer_inference import infer_local
-                result = infer_local(job["params"], approved_models or set())
-            else:
-                result = calculate(job["kind"], job["params"])
+            # Both voluntary local limits and signed offer limits apply.
+            # The requester has no power to increase these bounds.
+            published_limits = job.get("limits", {})
+            allowed_wall = min(max_wall_seconds, published_limits.get("max_wall_seconds", max_wall_seconds))
+            allowed_memory = min(max_memory_mb, published_limits.get("max_memory_mb", max_memory_mb))
+            result = run_limited(
+                job["kind"], job["params"], approved_models or set(),
+                timeout_seconds=allowed_wall, max_memory_mb=allowed_memory
+            )
         except (ValueError, RuntimeError, TimeoutError, OSError, KeyError) as exc:
             # No raw exception or prompt is sent to the API; do not leave the job claimed forever.
             transact(base, account, "compute_fail", {"job_height": job["height"]})
@@ -85,7 +91,7 @@ def run_once(base: str, account: dict, offer_height: int, approved_models: set[s
 
 def main():
     p = argparse.ArgumentParser(description="AI WORLD compute commons — voluntary CPU lending, 0 SOL")
-    p.add_argument("command", choices=["offer", "withdraw", "request", "authorize", "serve", "verify", "recover", "offers", "jobs"])
+    p.add_argument("command", choices=["offer", "withdraw", "request", "authorize", "serve", "verify", "recover", "offers", "jobs", "inventory"])
     p.add_argument("--identity", default="agent_key.json")
     p.add_argument("--server", default="http://127.0.0.1:8000")
     p.add_argument("--offer", type=int, default=0)
@@ -93,6 +99,12 @@ def main():
     p.add_argument("--kinds", default="hash_chain,prime_count")
     p.add_argument("--models", default="", help="Comma-separated, explicitly approved local Ollama models")
     p.add_argument("--max-jobs", type=int, default=3)
+    p.add_argument("--max-wall-seconds", type=int, default=90,
+                   help="Volunteer-imposed per-task limit: 5..120 seconds")
+    p.add_argument("--max-memory-mb", type=int, default=512,
+                   help="Volunteer subprocess memory ceiling: 256..4096 MiB")
+    p.add_argument("--require-gpu", action="store_true",
+                   help="Refuse volunteering inference if no NVIDIA GPU is detected; acceleration is not guaranteed")
     p.add_argument("--mode", choices=["free", "paid"], default="free")
     p.add_argument("--price-lamports", type=int, default=0, help="Gross price; no real payment collected")
     p.add_argument("--ttl", type=int, default=3600)
@@ -107,17 +119,26 @@ def main():
     p.add_argument("--interval", type=int, default=5, help="Seconds between polls (serve)")
     args = p.parse_args()
     base = args.server
+    if args.command == "inventory":
+        print(json.dumps(inspect_resources(), indent=2)); return
+    if args.max_wall_seconds < 5 or args.max_wall_seconds > 120 or args.max_memory_mb < 256 or args.max_memory_mb > 4096:
+        raise SystemExit("Volunteer resource limits must be wall=5..120s, memory=256..4096 MiB")
     if args.command == "offers":
         print(json.dumps(api(base, "/v1/compute/offers"), indent=2)); return
     if args.command == "jobs":
         print(json.dumps(api(base, "/v1/compute/jobs"), indent=2)); return
     account = read(Path(args.identity))
     if args.command == "offer":
+        snapshot = inspect_resources()
+        if args.require_gpu and (not snapshot["nvidia_gpus"] or "inference" not in args.kinds.split(",")):
+            raise SystemExit("GPU-specific offer requires both a detected NVIDIA GPU and an inference task")
         result = transact(base, account, "compute_offer", {
             "kinds": [s.strip() for s in args.kinds.split(",")],
             "models": [s.strip() for s in args.models.split(",") if s.strip()],
             "max_jobs": args.max_jobs, "ttl_seconds": args.ttl,
-            "terms": {"mode": args.mode, "price_lamports": args.price_lamports}})
+            "terms": {"mode": args.mode, "price_lamports": args.price_lamports},
+            "resources": public_resources(snapshot),
+            "limits": {"max_wall_seconds": args.max_wall_seconds, "max_memory_mb": args.max_memory_mb}})
         print("Voluntary capacity offer:", json.dumps(result)); return
     if args.command == "withdraw":
         print(transact(base, account, "compute_withdraw", {"capacity_height": args.offer})); return
@@ -151,13 +172,16 @@ def main():
         print("Verified locally:", accepted, "Review:", result)
         return
     if args.command == "serve":
+        if args.require_gpu and not inspect_resources()["nvidia_gpus"]:
+            raise SystemExit("GPU-specific serving requires a locally detected NVIDIA GPU")
         if args.max_tasks < 1 or args.max_tasks > 25 or args.interval < 0:
             raise SystemExit("Invalid limits")
         done = 0
         approved = {s.strip() for s in args.models.split(",") if s.strip()}
         print("Volunteer worker running: only fixed CPU functions or explicit local Ollama models")
         while done < args.max_tasks:
-            n = run_once(base, account, args.offer, approved_models=approved)
+            n = run_once(base, account, args.offer, approved_models=approved,
+                         max_wall_seconds=args.max_wall_seconds, max_memory_mb=args.max_memory_mb)
             done += n
             if done < args.max_tasks:
                 time.sleep(args.interval)
