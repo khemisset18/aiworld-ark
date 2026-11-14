@@ -9,6 +9,12 @@ Les transactions SOL et l'adhésion payante restent **désactivées**. Ne collec
 > a réussi (offre 5, tâche 6, 669 nombres premiers, validation signée).
 > Ce n'est **pas** un test de réseau entre deux machines physiques.
 
+> **Nouveau :** si tu disposes de **deux PC sur le même réseau domestique**,
+> suis d'abord le [guide simplifié LAN privé Windows/WSL2 ou Linux](TEST_CPU_DEUX_PC_LAN.md).
+> Il automatise l'offre, le calcul CPU et la vérification signée, avec un port
+> Windows temporaire limité à l'IP du deuxième PC. L'essai LAN n'est pas une
+> validation HTTPS publique ni un déploiement en production.
+
 ## 1. Démarrer le coordinateur HTTPS
 
 Pré-requis : un serveur Linux public avec Docker + Compose, un nom de domaine à toi,
