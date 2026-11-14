@@ -22,6 +22,10 @@ from pydantic import BaseModel, Field
 from server import APP_DB, canonical, db, decode64
 
 router = APIRouter(prefix="/v1/billing", tags=["billing (experimental)"])
+# Founder's current roadmap: keep ALL live crypto payments frozen, including
+# previously experimental annual subscriptions. Changing env vars cannot enable
+# billing accidentally. Dedicated billing tests may explicitly patch this flag.
+BILLING_FROZEN = True
 ANNUAL_PRICE_EUR = Decimal("2000")
 ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 TEN_MINUTES_SECONDS = 10 * 60
@@ -29,7 +33,8 @@ RPC_URL = os.environ.get("ARK_SOLANA_RPC", "https://api.mainnet-beta.solana.com"
 
 
 def enabled() -> bool:
-    return os.environ.get("ARK_BILLING_ENABLED") == "1" and bool(os.environ.get("ARK_SOLANA_RECIPIENT"))
+    return (not BILLING_FROZEN and os.environ.get("ARK_BILLING_ENABLED") == "1"
+            and bool(os.environ.get("ARK_SOLANA_RECIPIENT")))
 
 
 def setup_billing() -> None:
@@ -115,7 +120,10 @@ class Confirmation(BaseModel):
 @router.get("/info")
 def info():
     return {"enabled": enabled(), "annual_price_eur": 2000,
-            "network": "Solana mainnet", "token": "SOL", "status": "experimental and disabled by default"}
+            "network": "Solana mainnet", "token": "SOL",
+            "status": "frozen_for_roadmap_only" if BILLING_FROZEN else "experimental_not_audited",
+            "invoice_payments_live": enabled(),
+            "notice": "No payment is required for the current experimental network while billing is frozen"}
 
 
 @router.post("/invoice")
