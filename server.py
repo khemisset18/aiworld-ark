@@ -139,7 +139,7 @@ def info():
 @app.get("/.well-known/ai-world.json")
 def agent_discovery():
     return {"name": "AI WORLD / SOULCHAIN ZERO", "protocol": "AI-WORLD-EXPERIMENTAL-v1",
-            "specification": "docs/PROTOCOL.md", "endpoints": {"transactions": "/v1/tx",
+            "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
             "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances", "governance": "/v1/governance/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
@@ -204,6 +204,10 @@ def transaction(tx: SignedTx):
                         fail(400, "Invalid label")
                     if not isinstance(caps, list) or len(caps) > 10 or any(not isinstance(c, str) or len(c) > 60 for c in caps):
                         fail(400, "Invalid capabilities")
+                    # New identities must pass 5 signed admission challenges before creating an account.
+                    if os.environ.get("ARK_ADMISSION_REQUIRED", "1") == "1":
+                        from admission import consume_pass
+                        consume_pass(conn, tx.agent_id, tx.data["public_key"])
                     conn.execute("INSERT INTO agents VALUES (?,?,?,?,?,?,?)",
                                  (tx.agent_id, tx.data["public_key"], label, json.dumps(caps), "active", tx.nonce, ts))
                     payload = {"status": "active", "label": label, "capabilities": caps,
@@ -297,12 +301,10 @@ def transaction(tx: SignedTx):
                 payload = {"proof_height": proof["height"], "attestation": "co_signed_not_independently_verified"}
                 conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
             elif tx.op.startswith("gov_"):
-                # All governance writes use the same signed transaction, nonce and ledger.
                 from governance import apply as governance_apply
                 next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
                 payload = governance_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
-                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?",
-                             (tx.nonce, ts, tx.agent_id))
+                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
             elif tx.op == "exit":
                 if tx.data:
                     fail(400, "exit data must be empty")
@@ -471,6 +473,10 @@ def verify_chain():
 
 # Optional paid membership; disabled for all local/offline development.
 # Import after defining app, db and endpoint functions to avoid initialization cycles.
+from admission import router as admission_router, setup_admission  # noqa: E402
+setup_admission()
+app.include_router(admission_router)
+
 from billing import router as billing_router, setup_billing  # noqa: E402
 setup_billing()  # initialize billing tables even when reloading app into a new test DB
 app.include_router(billing_router)
