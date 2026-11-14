@@ -55,11 +55,11 @@ def demo(monkeypatch, tmp_path):
         int(time.time()) + 600, bump, 0, bytes(32))
     account = {"owner": program_id, "executable": False,
                "lamports": 1_010_000_000, "data": [base64.b64encode(raw).decode(), "base64"]}
-    return c, gw, monkeypatch, height, address, account
+    return c, gw, monkeypatch, height, address, account, seller_key, seller
 
 
 def test_gateway_never_enables_mainnet_or_placeholder(demo):
-    c, gw, monkeypatch, height, address, account = demo
+    c, gw, monkeypatch, height, address, account, seller_key, seller_id = demo
     assert c.get("/v1/escrow/info").json()["enabled"] is True
     monkeypatch.setenv("ARK_SOLANA_NETWORK", "mainnet")
     assert c.get("/v1/escrow/info").json()["enabled"] is False
@@ -71,7 +71,7 @@ def test_gateway_never_enables_mainnet_or_placeholder(demo):
 
 
 def test_funded_pda_unlocks_only_the_correct_signed_job(demo):
-    c, gw, monkeypatch, height, address, account = demo
+    c, gw, monkeypatch, height, address, account, seller_key, seller_id = demo
     monkeypatch.setattr(gw, "get_finalized_account", lambda _: (account, 12345))
     r = c.post("/v1/escrow/confirm-funded", json={
         "job_height": height, "escrow_address": address})
@@ -95,7 +95,7 @@ def test_funded_pda_unlocks_only_the_correct_signed_job(demo):
     "bad_pda_address", "wrong_bump",
 ])
 def test_fake_or_insufficient_escrow_never_unblocks_job(demo, mutation):
-    c, gw, monkeypatch, height, address, account = demo
+    c, gw, monkeypatch, height, address, account, seller_key, seller_id = demo
     altered = dict(account)
     altered["data"] = list(account["data"])
     payload = list(gw.STATE.unpack(base64.b64decode(altered["data"][0])[8:]))
@@ -133,7 +133,7 @@ def test_fake_or_insufficient_escrow_never_unblocks_job(demo, mutation):
 
 
 def test_gateway_rejects_rpc_outage_without_changing_job(demo):
-    c, gw, monkeypatch, height, address, account = demo
+    c, gw, monkeypatch, height, address, account, seller_key, seller_id = demo
     import httpx
     def unavailable(_):
         raise httpx.ConnectError("Devnet offline")
@@ -150,7 +150,7 @@ def test_gateway_rejects_rpc_outage_without_changing_job(demo):
 ])
 def test_reconcile_exact_onchain_final_state(demo, onchain_final, expected_status,
                                             expected_fee, expected_refund):
-    c, gw, monkeypatch, height, address, account = demo
+    c, gw, monkeypatch, height, address, account, seller_key, seller_id = demo
     onchain = [account, 12345]
     monkeypatch.setattr(gw, "get_finalized_account", lambda _: tuple(onchain))
     assert c.post("/v1/escrow/confirm-funded", json={
@@ -180,3 +180,32 @@ def test_reconcile_exact_onchain_final_state(demo, onchain_final, expected_statu
         "job_height": height, "escrow_address": address})
     assert again.status_code == 200
     assert again.json()["already_reconciled"] is True
+
+
+
+def test_paid_worker_cannot_claim_refunded_escrow_even_if_db_says_queued(demo):
+    c, gw, monkeypatch, height, address, account, seller_key, seller_id = demo
+    onchain = [account, 12345]
+    monkeypatch.setattr(gw, "get_finalized_account", lambda _: tuple(onchain))
+    response = c.post("/v1/escrow/confirm-funded", json={
+        "job_height": height, "escrow_address": address})
+    assert response.status_code == 200, response.text
+    assert c.get(f"/v1/compute/jobs/{height}").json()["status"] == "queued"
+
+    # Both parties settle/refund directly on-chain after the original funding.
+    # AI WORLD must re-check the live state instead of trusting the old receipt.
+    fields = list(gw.STATE.unpack(base64.b64decode(account["data"][0])[8:]))
+    fields[9] = 4  # REFUNDED on-chain
+    raw = gw.DISCRIMINATOR + gw.STATE.pack(*fields)
+    onchain[0] = {**account, "lamports": 2_000_000,
+                  "data": [base64.b64encode(raw).decode(), "base64"]}
+    claim = do(c, seller_key, seller_id, 4, "compute_claim", {"job_height": height})
+    assert claim.status_code == 409, claim.text
+    assert c.get(f"/v1/compute/jobs/{height}").json()["status"] == "queued"
+
+    # Recheck on the real FUNDED state (mock transaction reorganization in demo
+    # only; a finalized Solana state cannot reverse this way in production).
+    onchain[0] = account
+    valid = do(c, seller_key, seller_id, 4, "compute_claim", {"job_height": height})
+    assert valid.status_code == 200, valid.text
+    assert c.get(f"/v1/compute/jobs/{height}").json()["status"] == "claimed"
