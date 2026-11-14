@@ -12,8 +12,8 @@ import time
 from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/v1/compute", tags=["voluntary-compute-pool"])
-OPERATIONS = {"compute_offer", "compute_withdraw", "compute_request", "compute_claim", "compute_complete", "compute_review"}
-KINDS = {"hash_chain", "prime_count"}
+OPERATIONS = {"compute_offer", "compute_withdraw", "compute_request", "compute_claim", "compute_complete", "compute_review", "compute_fail"}
+KINDS = {"hash_chain", "prime_count", "inference"}
 
 
 def bad(code: int, detail: str):
@@ -25,7 +25,7 @@ def setup(conn: sqlite3.Connection):
     CREATE TABLE IF NOT EXISTS compute_capacity (
         height INTEGER PRIMARY KEY, owner TEXT NOT NULL, kinds TEXT NOT NULL,
         max_jobs INTEGER NOT NULL, expiry INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT 'open');
+        models_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'open');
     CREATE TABLE IF NOT EXISTS compute_jobs (
         height INTEGER PRIMARY KEY, capacity_height INTEGER NOT NULL,
         requester TEXT NOT NULL, worker TEXT NOT NULL, kind TEXT NOT NULL,
@@ -33,6 +33,14 @@ def setup(conn: sqlite3.Connection):
         result_json TEXT, review TEXT, updated_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_compute_capacity ON compute_jobs(capacity_height,status);
     """)
+    # Backward-compatible upgrade of previously initialized local SQLite databases.
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(compute_capacity)")}
+    if "models_json" not in columns:
+        conn.execute("ALTER TABLE compute_capacity ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]'")
+
+
+def model_name(value):
+    return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,63}", value) is not None
 
 
 def exact(data, keys):
@@ -65,12 +73,21 @@ def validate_params(kind, params):
         s, e = params["start"], params["end"]
         if type(s) is not int or type(e) is not int or not (2 <= s <= e <= 1000000 and e - s <= 50000):
             bad(400, "prime range must be ordered, bounded, and <=50000 integers")
+    elif kind == "inference":
+        if not isinstance(params, dict) or set(params) != {"model", "prompt", "max_tokens"}:
+            bad(400, "inference needs model, prompt and max_tokens")
+        if not model_name(params["model"]):
+            bad(400, "Invalid local model name")
+        if not isinstance(params["prompt"], str) or not 1 <= len(params["prompt"].encode("utf-8")) <= 1024:
+            bad(400, "Prompt must contain 1..1024 UTF-8 bytes")
+        if type(params["max_tokens"]) is not int or not 1 <= params["max_tokens"] <= 128:
+            bad(400, "max_tokens must be 1..128")
     else:
         bad(400, "Unsupported safe job kind")
 
 
-def validate_result(kind, result):
-    if not isinstance(result, dict) or len(json.dumps(result)) > 1000:
+def validate_result(kind, result, params=None):
+    if not isinstance(result, dict) or len(json.dumps(result)) > (6000 if kind == "inference" else 1000):
         bad(400, "Invalid result")
     if kind == "hash_chain":
         if set(result) != {"sha256"} or not isinstance(result["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", result["sha256"]):
@@ -78,23 +95,34 @@ def validate_result(kind, result):
     elif kind == "prime_count":
         if set(result) != {"count"} or type(result["count"]) is not int or not 0 <= result["count"] <= 50001:
             bad(400, "Invalid prime count result")
+    elif kind == "inference":
+        if set(result) != {"model", "text"} or not isinstance(result["text"], str) or len(result["text"]) > 4000:
+            bad(400, "Invalid inference output")
+        if not isinstance(params, dict) or result["model"] != params["model"]:
+            bad(400, "Inference model mismatch")
 
 
 def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int):
     """Execute an operation inside the server's signed, serialized transaction."""
     now = int(time.time())
     if op == "compute_offer":
-        exact(data, {"kinds", "max_jobs", "ttl_seconds"})
+        if set(data) not in ({"kinds", "max_jobs", "ttl_seconds"}, {"kinds", "max_jobs", "ttl_seconds", "models"}):
+            bad(400, "Invalid capacity offer fields")
         kinds, quota, ttl = data["kinds"], data["max_jobs"], data["ttl_seconds"]
         if not isinstance(kinds, list) or not kinds or len(kinds) > len(KINDS) or any(type(k) is not str or k not in KINDS for k in kinds) or len(set(kinds)) != len(kinds):
             bad(400, "Offer must list distinct supported job kinds")
+        models = data.get("models", [])
+        if not isinstance(models, list) or len(models) > 3 or any(not model_name(m) for m in models) or len(set(models)) != len(models):
+            bad(400, "Models must be up to three distinct local model identifiers")
+        if ("inference" in kinds) != bool(models):
+            bad(400, "Inference offers require an explicit nonempty model allowlist")
         if type(quota) is not int or not 1 <= quota <= 25:
             bad(400, "max_jobs must be 1..25")
         if type(ttl) is not int or not 60 <= ttl <= 86400:
             bad(400, "ttl_seconds must be 60..86400")
-        conn.execute("INSERT INTO compute_capacity VALUES (?,?,?,?,?,?)",
-                     (height, actor, json.dumps(kinds), quota, now + ttl, "open"))
-        return {"capacity_height": height, "kinds": kinds, "max_jobs": quota,
+        conn.execute("INSERT INTO compute_capacity (height,owner,kinds,max_jobs,expiry,models_json,status) VALUES (?,?,?,?,?,?,?)",
+                     (height, actor, json.dumps(kinds), quota, now + ttl, json.dumps(models), "open"))
+        return {"capacity_height": height, "kinds": kinds, "models": models, "max_jobs": quota,
                 "expires_at": now + ttl, "cost": "0 SOL", "status": "open"}
     if op == "compute_withdraw":
         exact(data, {"capacity_height"})
@@ -118,6 +146,8 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         if kind not in json.loads(offer["kinds"]):
             bad(400, "Volunteer did not consent to this job kind")
         validate_params(kind, params)
+        if kind == "inference" and params["model"] not in json.loads(offer["models_json"]):
+            bad(403, "Volunteer has not approved that model")
         n = conn.execute("SELECT COUNT(*) FROM compute_jobs WHERE capacity_height=?", (offer["height"],)).fetchone()[0]
         if n >= offer["max_jobs"]:
             bad(409, "Volunteer capacity quota exhausted")
@@ -135,6 +165,16 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(409, "Job no longer claimable")
         conn.execute("UPDATE compute_jobs SET status='claimed',updated_at=? WHERE height=?", (now, job["height"]))
         return {"job_height": job["height"], "status": "claimed", "worker": actor}
+    if op == "compute_fail":
+        exact(data, {"job_height"})
+        job = row(conn, "compute_jobs", data["job_height"])
+        if job["worker"] != actor:
+            bad(403, "Only the volunteer may stop their own job")
+        if job["status"] != "claimed":
+            bad(409, "Only claimed jobs may be marked failed")
+        conn.execute("UPDATE compute_jobs SET status='failed_by_worker',updated_at=? WHERE height=?",
+                     (now, job["height"]))
+        return {"job_height": job["height"], "status": "failed_by_worker", "refund": "not applicable: 0 SOL"}
     if op == "compute_complete":
         exact(data, {"job_height", "result"})
         job = row(conn, "compute_jobs", data["job_height"])
@@ -142,7 +182,7 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(403, "Only the volunteer can submit a result")
         if job["status"] != "claimed":
             bad(409, "Job must be claimed and not cancelled")
-        validate_result(job["kind"], data["result"])
+        validate_result(job["kind"], data["result"], json.loads(job["params_json"]))
         conn.execute("UPDATE compute_jobs SET status='completed_unverified',result_json=?,updated_at=? WHERE height=?",
                      (json.dumps(data["result"]), now, job["height"]))
         return {"job_height": job["height"], "status": "completed_unverified", "worker": actor}
@@ -166,7 +206,8 @@ def info():
             "architecture": "single-server coordination; execution happens on volunteer CPU",
             "supported_jobs": sorted(KINDS), "remote_code_execution": False,
             "worker_consent": "explicit signed offer and separate signed claim per job",
-            "trust": "result is unverified until requester attests; identities are not Sybil-resistant"}
+            "trust": "result is unverified until requester attests; identities are not Sybil-resistant",
+            "inference": "optional local Ollama; no tool execution; no secrets in prompts"}
 
 
 @router.get("/offers")
@@ -183,7 +224,7 @@ def offers(status: str = "available", limit: int = Query(50, ge=1, le=100)):
             count = conn.execute("SELECT COUNT(*) FROM compute_jobs WHERE capacity_height=?", (r["height"],)).fetchone()[0]
             if status == "available" and count >= r["max_jobs"]:
                 continue
-            result.append({**dict(r), "kinds": json.loads(r["kinds"]), "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
+            result.append({**dict(r), "kinds": json.loads(r["kinds"]), "models": json.loads(r["models_json"]), "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
         return result
 
 
@@ -191,7 +232,7 @@ def offers(status: str = "available", limit: int = Query(50, ge=1, le=100)):
 def jobs(capacity_height: int | None = None, requester: str | None = None,
          status: str = "all", limit: int = Query(50, ge=1, le=100)):
     from server import db
-    if status not in ("all", "queued", "claimed", "completed_unverified", "accepted_by_requester", "rejected_by_requester", "cancelled"):
+    if status not in ("all", "queued", "claimed", "completed_unverified", "accepted_by_requester", "rejected_by_requester", "cancelled", "failed_by_worker"):
         bad(400, "Invalid job status")
     if capacity_height is not None and capacity_height < 1:
         bad(400, "Invalid capacity height")
