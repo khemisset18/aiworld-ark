@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import secrets
 import sqlite3
 import time
@@ -24,6 +25,11 @@ from solana_settlement import (
 
 router = APIRouter(prefix="/v1/compute-payments", tags=["paid-compute-devnet"])
 LIFETIME_SECONDS = 15 * 60
+
+
+def direct_enabled() -> bool:
+    """Explicit Devnet-only opt-in for an unprotected demonstration; OFF by default."""
+    return billing_enabled() and os.environ.get("ARK_DEVNET_DIRECT_PAYMENTS_EXPERIMENTAL") == "1"
 
 
 def setup_compute_payments() -> None:
@@ -53,15 +59,15 @@ setup_compute_payments()
 
 @router.get("/info")
 def info():
-    return {"network": "devnet", "enabled": billing_enabled(),
+    return {"network": "devnet", "enabled": direct_enabled(), "escrow_available": False,
             "membership_price_sol": "20", "fee_percent": 3,
             "treasury_wallet": TREASURY,
-            "note": "No mainnet payments or escrow; Devnet test only"}
+            "note": "Insecure direct transfers disabled by default; audit on-chain escrow before production"}
 
 
 @router.post("/invoice/{job_height}")
 def invoice(job_height: int):
-    if not billing_enabled():
+    if not direct_enabled():
         raise HTTPException(503, "Solana Devnet test billing disabled")
     if job_height < 1:
         raise HTTPException(400, "Invalid job")
@@ -133,7 +139,7 @@ class ConfirmRequest(BaseModel):
 
 @router.post("/confirm")
 def confirm(request: ConfirmRequest):
-    if not billing_enabled():
+    if not direct_enabled():
         raise HTTPException(503, "Devnet billing disabled")
     with db() as conn:
         row = conn.execute("SELECT * FROM compute_invoices WHERE invoice_id=?",
