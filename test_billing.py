@@ -17,6 +17,7 @@ def billing_client(monkeypatch, tmp_path):
     monkeypatch.setenv("ARK_BILLING_ENABLED", "1")
     monkeypatch.setenv("ARK_SOLANA_RECIPIENT", "11111111111111111111111111111111")
     monkeypatch.setenv("ARK_PAYMENT_REQUIRED", "1")
+    monkeypatch.setenv("ARK_ADMISSION_REQUIRED", "0")
     import server
     import billing
     importlib.reload(server)
