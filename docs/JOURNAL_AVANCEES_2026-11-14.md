@@ -88,6 +88,22 @@ et 0/4096 Mio de VRAM. La commande de présence d'Ollama a retourné
 d'exécuter un modèle. Voir les
 [étapes prudentes du protocole GPU](TEST_PREUVE_GPU_AGENTS.md).
 
+### État du test GPU PC1 : installateur Ollama bloqué par `zstd`
+
+L'opérateur a lancé `sudo apt update`, `sudo apt install -y curl` puis
+`curl -fsSL https://ollama.com/install.sh | sh` sur PC1 Ubuntu WSL2.
+Les téléchargements `apt` ont réussi, **l'installation d'Ollama non** :
+l'installateur indique explicitement `This version requires zstd for extraction`.
+Par conséquent `ollama --version` et `ollama pull smollm2:135m` ne
+fonctionnent pas, et `/api/version` ne répond pas.
+
+**Résolution préparée, mais pas encore confirmée par l'opérateur :**
+`sudo apt install -y zstd`, puis relancer l'installateur officiel,
+vérifier le service Ollama et télécharger le modèle. Le test local
+`essai_gpu_pc1.py` a été ajouté en branche pour exiger une résidence réelle
+du modèle en VRAM via l'API Ollama ; un test automatique est également ajouté.
+**Aucune preuve GPU obtenue à cette étape.**
+
 ## À ne pas confondre
 
 | Élément | Statut actuel |
