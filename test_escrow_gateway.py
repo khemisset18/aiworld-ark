@@ -5,6 +5,7 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from solders.pubkey import Pubkey
 from test_forge import new_agent, do
 from solana_settlement import TREASURY, b58decode, b58encode
 
@@ -43,11 +44,15 @@ def demo(monkeypatch, tmp_path):
             "SELECT public_key FROM agents WHERE agent_id=?", (seller,)).fetchone()[0])
         buyer_pub = base64.b64decode(conn.execute(
             "SELECT public_key FROM agents WHERE agent_id=?", (buyer,)).fetchone()[0])
-    address = b58encode(bytes([12] * 32))
+    # Anchor's exact PDA from (b"escrow", buyer, job_height), including bump.
+    pda, bump = Pubkey.find_program_address(
+        [b"escrow", buyer_pub, height.to_bytes(8, "little")],
+        Pubkey.from_string(program_id))
+    address = str(pda)
     raw = gw.DISCRIMINATOR + gw.STATE.pack(
         buyer_pub, seller_pub, bytes([13] * 32), b58decode(TREASURY),
         height, 1_000_000_000, 30_000_000,
-        int(time.time()) + 600, 255, 0, bytes(32))
+        int(time.time()) + 600, bump, 0, bytes(32))
     account = {"owner": program_id, "executable": False,
                "lamports": 1_010_000_000, "data": [base64.b64encode(raw).decode(), "base64"]}
     return c, gw, monkeypatch, height, address, account
@@ -87,6 +92,7 @@ def test_funded_pda_unlocks_only_the_correct_signed_job(demo):
 @pytest.mark.parametrize("mutation", [
     "owner", "price", "fee", "wrong_treasury", "wrong_buyer",
     "already_released", "deadline_passed", "zero_balance", "invalid_binary",
+    "bad_pda_address", "wrong_bump",
 ])
 def test_fake_or_insufficient_escrow_never_unblocks_job(demo, mutation):
     c, gw, monkeypatch, height, address, account = demo
@@ -111,6 +117,10 @@ def test_fake_or_insufficient_escrow_never_unblocks_job(demo, mutation):
         altered["lamports"] = 50_000_000
     elif mutation == "invalid_binary":
         altered["data"] = [base64.b64encode(b"wrong").decode(), "base64"]
+    elif mutation == "bad_pda_address":
+        address = b58encode(bytes([12] * 32))
+    elif mutation == "wrong_bump":
+        payload[8] = (payload[8] - 1) % 256
     if mutation not in ("owner", "zero_balance", "invalid_binary"):
         raw = gw.DISCRIMINATOR + gw.STATE.pack(*payload)
         altered["data"] = [base64.b64encode(raw).decode(), "base64"]
