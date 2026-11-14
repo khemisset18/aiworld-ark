@@ -260,6 +260,30 @@ def confirm_funded(req: FundProof):
             "release_requires": "buyer acceptance, mutual signatures, or named arbiter" }
 
 
+def assert_paid_job_is_still_funded(conn, job_height: int) -> None:
+    """Fail closed at compute-claim time if an escrow was refunded/released.
+
+    A once-valid funding proof is not enough: both parties may have mutually
+    refunded before a worker tries to claim. The RPC must still confirm FUNDED.
+    """
+    program = active_program_id()
+    if program is None:
+        bad(503, "Verified Devnet escrow gateway is not enabled")
+    receipt_row = conn.execute(
+        "SELECT * FROM escrow_receipts WHERE job_height=?", (job_height,)
+    ).fetchone()
+    if receipt_row is None or receipt_row["program_id"] != program:
+        bad(409, "No matching verified escrow receipt")
+    if receipt_row["final_status"] is not None:
+        bad(409, "Escrow has already reached a final payment state")
+    expected = _expected_job(conn, job_height, require_pending=False)
+    try:
+        account, _slot = get_finalized_account(receipt_row["escrow_address"])
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "Cannot verify current Solana escrow state") from exc
+    _validate_snapshot(account, receipt_row["escrow_address"], program, expected)
+
+
 @router.get("/receipts/{job_height}")
 def receipt(job_height: int):
     if job_height < 1:
