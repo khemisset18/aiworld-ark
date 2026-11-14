@@ -185,7 +185,10 @@ def test_volunteer_can_fail_a_claimed_job_without_a_charge(c):
     assert c.get("/v1/chain/verify").json()["valid"]
 
 
-def test_priced_offer_fee_and_unverified_payment_cannot_unlock_compute(c):
+def test_priced_offer_fee_and_unverified_payment_cannot_unlock_compute(c, monkeypatch):
+    # Old quotation logic is exercised only as a simulated future feature.
+    import billing
+    monkeypatch.setattr(billing, "BILLING_FROZEN", False)
     """Paid tasks stay blocked; providers cannot fake a settled transaction."""
     k_provider, provider = new_agent(c, "Fee provider")
     k_buyer, buyer = new_agent(c, "Fee buyer")
@@ -229,3 +232,15 @@ def test_fee_rounding_is_integer_and_free_jobs_never_pay():
                     {"mode": "paid", "price_lamports": 0}):
         with pytest.raises(Exception):
             price_breakdown(invalid)
+
+
+def test_paid_compute_offers_are_disabled_by_roadmap(c):
+    key, identity = new_agent(c, "Volunteer")
+    offer = do(c, key, identity, 2, "compute_offer", {
+        "kinds": ["hash_chain"], "max_jobs": 1, "ttl_seconds": 3600,
+        "terms": {"mode": "paid", "price_lamports": 1_000_000}})
+    assert offer.status_code == 503
+    info = c.get("/v1/compute/info").json()
+    assert info["paid_exchange"] == "planned_disabled"
+    assert info["paid_offers_enabled"] is False
+    assert info["live_payments_enabled"] is False
