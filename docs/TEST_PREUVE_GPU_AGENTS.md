@@ -33,6 +33,39 @@ wsl -d Ubuntu --exec nvidia-smi
 
 `ollama --version` peut échouer si Ollama n'est pas installé, ce n'est pas une erreur du projet. Dans WSL2, `nvidia-smi` peut être à `/usr/lib/wsl/lib/nvidia-smi` selon le système. Ne pas installer Ollama ni télécharger de modèles avant d'avoir validé le refroidissement.
 
+## Relevé du 15 novembre 2026 — PC1, vérification sans charge
+
+Un nouveau relevé Windows PowerShell de la GTX 1650 a été transmis par l'opérateur :
+
+```text
+name, temperature.gpu, utilization.gpu [%], memory.used [MiB], memory.total [MiB], driver_version
+NVIDIA GeForce GTX 1650, 52, 0 %, 0 MiB, 4096 MiB, 610.91
+```
+
+**Conclusion du contrôle :** le GPU était à **52 °C**, 0 % d'utilisation et
+0/4096 Mio de VRAM occupée lors de la lecture. C'est une amélioration
+encourageante par rapport aux 90 °C signalés auparavant. **Ce contrôle
+ponctuel n'atteste pas la stabilité thermique sous charge** ; arrêter
+immédiatement le test en cas de remontée anormale, problèmes de
+refroidissement, artefacts ou instabilité.
+
+**Prochaine action (sans charge), sur le PC1 PowerShell :**
+
+```powershell
+wsl -d Ubuntu --exec bash -lc 'if command -v nvidia-smi >/dev/null 2>&1; then nvidia-smi --query-gpu=name,temperature.gpu,memory.total --format=csv; elif test -x /usr/lib/wsl/lib/nvidia-smi; then /usr/lib/wsl/lib/nvidia-smi --query-gpu=name,temperature.gpu,memory.total --format=csv; else echo "nvidia-smi absent dans Ubuntu WSL2"; fi'
+wsl -d Ubuntu --exec bash -lc 'if command -v ollama >/dev/null 2>&1; then ollama --version; else echo "Ollama absent dans Ubuntu WSL2"; fi'
+```
+
+Ces deux commandes vérifient uniquement la disponibilité du GPU sous
+Ubuntu WSL2 et la présence d'Ollama. Elles **ne démarrent aucun modèle**.
+Le pilote GPU doit être suspendu si la carte n'est pas accessible depuis
+l'environnement exécutant le worker.
+
+**Références officielles vérifiées :** [CUDA dans WSL2 — Microsoft](https://learn.microsoft.com/en-us/windows/ai/directml/gpu-cuda-in-wsl),
+[Installation Ollama Linux](https://docs.ollama.com/linux),
+[Support GPU NVIDIA dans Ollama](https://docs.ollama.com/gpu),
+[Observation GPU avec `ollama ps`](https://docs.ollama.com/faq).
+
 ## Étape 1 — Architecture de la preuve (quand la température sera normale)
 
 Le coordinateur reste sur PC1. **On inverse les rôles du pilote CPU** : cette fois, le PC1 héberge le volontaire GPU ; le PC2 demande une réponse générée par un modèle autorisé.
@@ -77,6 +110,6 @@ Les journaux doivent inclure identifiants **offre/tâche**, modèle effectivemen
 - **Pas encore garanti** : l'option `--require-gpu` ne prouve pas que le modèle a calculé sur GPU. Le processus Ollama est séparé et sa VRAM n'est pas limitée par la mémoire du worker Python.
 - À faire avant d'ouvrir le réseau : mesures thermiques et quotas GPU, isolation Ollama, authentification/transport chiffré, résistance aux abus, supervision et tests sur plusieurs volontaires.
 
-**À faire maintenant :** récupérer seulement la sortie de `nvidia-smi --query-gpu=...` sur le PC1. Si la température est normale, préparer ensuite le modèle local et le test réseau. Si elle reste très élevée, corriger le refroidissement avant toute utilisation.
+**À faire maintenant :** collecter les résultats WSL2 de `nvidia-smi` et `ollama --version` ci-dessus. N'installer aucun modèle tant que l'accès CUDA et la stabilité thermique ne sont pas établis.
 
 Sources : [documentation officielle Ollama GPU](https://github.com/ollama/ollama/blob/main/docs/gpu.mdx), [vérifier le chargement GPU dans Ollama](https://github.com/ollama/ollama/blob/main/docs/faq.mdx), [requêtes nvidia-smi NVIDIA](https://nvidia.custhelp.com/app/answers/detail/a_id/3751).
