@@ -137,11 +137,14 @@ fn joint_ix(s: &Scenario, provider: Pubkey, pay_provider: bool) -> Instruction {
 #[tokio::test]
 async fn funded_job_pays_exactly_97_3_after_delivery_and_buyer_acceptance() {
     let mut s = start().await;
-    let before_provider = balance(&mut s, s.provider.pubkey()).await;
+    let provider_address = s.provider.pubkey();
+    let buyer_address = s.buyer.pubkey();
+    let escrow_address = s.escrow;
+    let before_provider = balance(&mut s, provider_address).await;
     let before_treasury = balance(&mut s, TREASURY).await;
     fund(&mut s).await;
     assert_eq!(state(&mut s).await.status, escrow_program::FUNDED);
-    let pda_before = balance(&mut s, s.escrow).await;
+    let pda_before = balance(&mut s, escrow_address).await;
     assert!(pda_before > GROSS); // holds both user funds and separate rent
     let unauthorized = deliver_ix(&s, s.imposter.pubkey());
     assert!(send(&mut s.ctx, unauthorized, &[&s.imposter]).await.is_err());
@@ -151,9 +154,9 @@ async fn funded_job_pays_exactly_97_3_after_delivery_and_buyer_acceptance() {
     assert!(send(&mut s.ctx, fake_accept, &[&s.imposter]).await.is_err());
     let accept = accept_ix(&s, s.buyer.pubkey());
     send(&mut s.ctx, accept, &[&s.buyer]).await.unwrap();
-    assert_eq!(balance(&mut s, s.provider.pubkey()).await - before_provider, NET);
+    assert_eq!(balance(&mut s, provider_address).await - before_provider, NET);
     assert_eq!(balance(&mut s, TREASURY).await - before_treasury, FEE);
-    assert_eq!(balance(&mut s, s.escrow).await, pda_before - GROSS);
+    assert_eq!(balance(&mut s, escrow_address).await, pda_before - GROSS);
     assert_eq!(state(&mut s).await.status, escrow_program::RELEASED);
     let repeat = accept_ix(&s, s.buyer.pubkey());
     assert!(send(&mut s.ctx, repeat, &[&s.buyer]).await.is_err());
@@ -162,9 +165,12 @@ async fn funded_job_pays_exactly_97_3_after_delivery_and_buyer_acceptance() {
 #[tokio::test]
 async fn undelivered_job_refunds_full_gross_without_platform_fee() {
     let mut s = start().await;
+    let provider_address = s.provider.pubkey();
+    let buyer_address = s.buyer.pubkey();
+    let escrow_address = s.escrow;
     let before_treasury = balance(&mut s, TREASURY).await;
     fund(&mut s).await;
-    let before_refund = balance(&mut s, s.buyer.pubkey()).await;
+    let before_refund = balance(&mut s, buyer_address).await;
     let early = refund_ix(&s);
     assert!(send(&mut s.ctx, early, &[&s.buyer]).await.is_err());
     let mut clock: Clock = s.ctx.banks_client.get_sysvar().await.unwrap();
@@ -172,7 +178,7 @@ async fn undelivered_job_refunds_full_gross_without_platform_fee() {
     s.ctx.set_sysvar(&clock);
     let refund = refund_ix(&s);
     send(&mut s.ctx, refund, &[&s.buyer]).await.unwrap();
-    assert_eq!(balance(&mut s, s.buyer.pubkey()).await - before_refund, GROSS);
+    assert_eq!(balance(&mut s, buyer_address).await - before_refund, GROSS);
     assert_eq!(balance(&mut s, TREASURY).await, before_treasury);
     assert_eq!(state(&mut s).await.status, escrow_program::REFUNDED);
     let duplicate = refund_ix(&s);
@@ -182,13 +188,16 @@ async fn undelivered_job_refunds_full_gross_without_platform_fee() {
 #[tokio::test]
 async fn dispute_requires_the_named_arbitrator_and_can_refund() {
     let mut s = start().await;
+    let provider_address = s.provider.pubkey();
+    let buyer_address = s.buyer.pubkey();
+    let escrow_address = s.escrow;
     fund(&mut s).await;
     deliver(&mut s).await;
     let dispute = instruction(escrow_program::accounts::BuyerRefund {
         buyer: s.buyer.pubkey(), escrow: s.escrow,
     }, escrow_program::instruction::OpenDispute {});
     send(&mut s.ctx, dispute, &[&s.buyer]).await.unwrap();
-    let before_buyer = balance(&mut s, s.buyer.pubkey()).await;
+    let before_buyer = balance(&mut s, buyer_address).await;
     let before_treasury = balance(&mut s, TREASURY).await;
     let fake = instruction(escrow_program::accounts::Arbitrate {
         arbiter: s.imposter.pubkey(), escrow: s.escrow,
@@ -200,7 +209,7 @@ async fn dispute_requires_the_named_arbitrator_and_can_refund() {
         buyer: s.buyer.pubkey(), provider: s.provider.pubkey(), treasury: TREASURY,
     }, escrow_program::instruction::Arbitrate {pay_provider: false});
     send(&mut s.ctx, valid, &[&s.arbiter]).await.unwrap();
-    assert_eq!(balance(&mut s, s.buyer.pubkey()).await - before_buyer, GROSS);
+    assert_eq!(balance(&mut s, buyer_address).await - before_buyer, GROSS);
     assert_eq!(balance(&mut s, TREASURY).await, before_treasury);
     assert_eq!(state(&mut s).await.status, escrow_program::REFUNDED);
 }
@@ -208,14 +217,17 @@ async fn dispute_requires_the_named_arbitrator_and_can_refund() {
 #[tokio::test]
 async fn joint_settlement_requires_original_buyer_and_provider_signatures() {
     let mut s = start().await;
+    let provider_address = s.provider.pubkey();
+    let buyer_address = s.buyer.pubkey();
+    let escrow_address = s.escrow;
     fund(&mut s).await;
     let wrong = joint_ix(&s, s.imposter.pubkey(), false);
     assert!(send(&mut s.ctx, wrong, &[&s.buyer, &s.imposter]).await.is_err());
-    let before_buyer = balance(&mut s, s.buyer.pubkey()).await;
+    let before_buyer = balance(&mut s, buyer_address).await;
     let before_treasury = balance(&mut s, TREASURY).await;
     let mutual_cancel = joint_ix(&s, s.provider.pubkey(), false);
     send(&mut s.ctx, mutual_cancel, &[&s.buyer, &s.provider]).await.unwrap();
-    assert_eq!(balance(&mut s, s.buyer.pubkey()).await - before_buyer, GROSS);
+    assert_eq!(balance(&mut s, buyer_address).await - before_buyer, GROSS);
     assert_eq!(balance(&mut s, TREASURY).await, before_treasury);
     assert_eq!(state(&mut s).await.status, escrow_program::REFUNDED);
 }
