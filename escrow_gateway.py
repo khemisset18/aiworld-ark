@@ -62,8 +62,14 @@ def setup() -> None:
             program_id TEXT NOT NULL,
             proof_slot INTEGER NOT NULL,
             deadline INTEGER NOT NULL,
-            confirmed_at INTEGER NOT NULL
+            confirmed_at INTEGER NOT NULL,
+            final_status TEXT, finalized_slot INTEGER
         )""")
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(escrow_receipts)")}
+        if "final_status" not in columns:
+            conn.execute("ALTER TABLE escrow_receipts ADD COLUMN final_status TEXT")
+        if "finalized_slot" not in columns:
+            conn.execute("ALTER TABLE escrow_receipts ADD COLUMN finalized_slot INTEGER")
         conn.commit()
 
 
@@ -124,16 +130,16 @@ def _agent_pubkey(conn, agent_id: str) -> bytes:
     return result
 
 
-def _expected_job(conn, height: int) -> dict:
+def _expected_job(conn, height: int, *, require_pending: bool = True) -> dict:
     job = conn.execute("SELECT * FROM compute_jobs WHERE height=?", (height,)).fetchone()
     if job is None:
         bad(404, "Job not found")
-    if job["status"] != "seller_approved_awaiting_payment":
+    if require_pending and job["status"] != "seller_approved_awaiting_payment":
         bad(409, "Paid job requires its provider's signed authorization")
     offer = conn.execute("SELECT * FROM compute_capacity WHERE height=?",
                          (job["capacity_height"],)).fetchone()
     now = int(time.time())
-    if offer is None or offer["status"] != "open" or offer["expiry"] <= now:
+    if offer is None or (require_pending and (offer["status"] != "open" or offer["expiry"] <= now)):
         bad(409, "Compute offer is withdrawn or expired")
     quote = price_breakdown(json.loads(offer["terms_json"]))
     if quote["mode"] != "paid" or quote["price_lamports"] <= 0:
@@ -144,12 +150,13 @@ def _expected_job(conn, height: int) -> dict:
             "fee": quote["platform_fee_lamports"]}
 
 
-def _validate_snapshot(account: dict, address: str, program: str, expected: dict) -> int:
+def _validate_snapshot(account: dict, address: str, program: str, expected: dict,
+                       *, allow_final: bool = False) -> tuple[int, int]:
     if account.get("owner") != program or account.get("executable") is not False:
         bad(409, "Escrow account is not owned by the configured Solana program")
     lamports = account.get("lamports")
-    if type(lamports) is not int or lamports < expected["gross"]:
-        bad(409, "Escrow account does not hold the full agreed gross amount")
+    if type(lamports) is not int or (lamports <= 0 if allow_final else lamports < expected["gross"]):
+        bad(409, "Escrow account has insufficient funds for its recorded state")
     data = account.get("data")
     if not isinstance(data, list) or len(data) != 2 or data[1] != "base64":
         bad(503, "Unexpected Solana account encoding")
@@ -169,12 +176,16 @@ def _validate_snapshot(account: dict, address: str, program: str, expected: dict
     if (record["arbiter"] in (bytes(32), record["buyer"],
                               record["provider"], record["treasury"])):
         bad(409, "Arbiter key conflicts with a settlement party")
-    if not (now + MIN_TIME_TO_FINISH_SECONDS < record["deadline"] <=
-            now + MAX_TIME_TO_FINISH_SECONDS):
-        bad(409, "Escrow deadline does not leave enough time for execution")
-    if record["status"] != FUNDED or record["proof_digest"] != bytes(32):
-        bad(409, "Escrow must be funded and not already delivered or settled")
-    return record["deadline"]
+    if allow_final:
+        if record["status"] not in (3, 4):
+            bad(409, "Escrow has not reached a financial terminal state on-chain")
+    else:
+        if not (now + MIN_TIME_TO_FINISH_SECONDS < record["deadline"] <=
+                now + MAX_TIME_TO_FINISH_SECONDS):
+            bad(409, "Escrow deadline does not leave enough time for execution")
+        if record["status"] != FUNDED or record["proof_digest"] != bytes(32):
+            bad(409, "Escrow must be funded and not already delivered or settled")
+    return record["deadline"], record["status"]
 
 
 @router.get("/info")
@@ -208,7 +219,7 @@ def confirm_funded(req: FundProof):
         account, slot = get_finalized_account(req.escrow_address)
     except httpx.HTTPError as exc:
         bad(503, "Solana Devnet unavailable")
-    deadline = _validate_snapshot(account, req.escrow_address, program, expected)
+    deadline, _ = _validate_snapshot(account, req.escrow_address, program, expected)
     with db() as conn:
         try:
             conn.execute("BEGIN IMMEDIATE")
@@ -234,3 +245,68 @@ def confirm_funded(req: FundProof):
             "onchain_state": "funded", "proof_slot": slot,
             "deadline": deadline, "real_sol_received_by_treasury": False,
             "release_requires": "buyer acceptance, mutual signatures, or named arbiter" }
+
+
+@router.get("/receipts/{job_height}")
+def receipt(job_height: int):
+    if job_height < 1:
+        bad(400, "Invalid job ID")
+    with db() as conn:
+        row = conn.execute("SELECT * FROM escrow_receipts WHERE job_height=?",
+                           (job_height,)).fetchone()
+        if not row:
+            bad(404, "No verified escrow funded receipt")
+        return dict(row)
+
+
+@router.post("/reconcile-final")
+def reconcile_final(req: FundProof):
+    """Confirm an actual final payout or refund from on-chain account data.
+
+    Never mark success from an off-chain promise or from client screenshots.
+    A finalized result here means escrow state RELEASED or REFUNDED, not
+    a guarantee that the provider's compute answer was correct.
+    """
+    program = active_program_id()
+    if program is None:
+        bad(503, "Escrow gateway disabled")
+    with db() as conn:
+        receipt_row = conn.execute(
+            "SELECT * FROM escrow_receipts WHERE job_height=?",
+            (req.job_height,)).fetchone()
+        if not receipt_row or receipt_row["escrow_address"] != req.escrow_address:
+            bad(404, "No matching verified escrow funded receipt")
+        if receipt_row["program_id"] != program:
+            bad(409, "Escrow program ID changed since funds were verified")
+        expected = _expected_job(conn, req.job_height, require_pending=False)
+    try:
+        account, slot = get_finalized_account(req.escrow_address)
+    except httpx.HTTPError:
+        bad(503, "Solana Devnet verification unavailable")
+    _, state = _validate_snapshot(account, req.escrow_address, program, expected, allow_final=True)
+    terminal = "released_to_provider" if state == 3 else "refunded_to_buyer"
+    with db() as conn:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            record = conn.execute("SELECT * FROM escrow_receipts WHERE job_height=?",
+                                  (req.job_height,)).fetchone()
+            if record is None or record["escrow_address"] != req.escrow_address:
+                bad(409, "Receipt changed during reconciliation")
+            if record["final_status"] is not None:
+                if record["final_status"] == terminal:
+                    conn.rollback()
+                    return {"job_height": req.job_height, "status": terminal,
+                            "already_reconciled": True}
+                bad(409, "Escrow final outcome conflict")
+            conn.execute("""UPDATE escrow_receipts
+                SET final_status=?, finalized_slot=? WHERE job_height=?""",
+                (terminal, slot, req.job_height))
+            conn.commit()
+        except (HTTPException, sqlite3.DatabaseError):
+            conn.rollback()
+            raise
+    return {"job_height": req.job_height, "status": terminal,
+            "proof_slot": slot, "already_reconciled": False,
+            "platform_fee_lamports": expected["fee"] if state == 3 else 0,
+            "provider_lamports": expected["gross"] - expected["fee"] if state == 3 else 0,
+            "buyer_refund_lamports": expected["gross"] if state == 4 else 0}
