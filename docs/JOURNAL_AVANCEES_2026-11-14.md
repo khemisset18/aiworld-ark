@@ -75,6 +75,19 @@ stabilité sous charge.
 PC1 et présence d'Ollama local (commandes sans charge). Voir le
 [protocole de preuve GPU actualisé](TEST_PREUVE_GPU_AGENTS.md).
 
+### Diagnostic PC1 : WSL2 voit NVIDIA, Ollama absent
+
+Suite au relevé Windows de 52 °C, le PC1 a confirmé la visibilité de sa
+**GTX 1650** sous Ubuntu WSL2 : `NVIDIA-SMI 610.59`,
+pilote `KMD 610.91`, `CUDA UMD 13.3`, **68 °C**, 0 % d'utilisation
+et 0/4096 Mio de VRAM. La commande de présence d'Ollama a retourné
+`OLLAMA_NON_INSTALLE`.
+
+**GPU détecté, pas encore utilisé pour une tâche IA.** La température
+68 °C à 0 % de charge justifie un suivi avant d'installer et
+d'exécuter un modèle. Voir les
+[étapes prudentes du protocole GPU](TEST_PREUVE_GPU_AGENTS.md).
+
 ## À ne pas confondre
 
 | Élément | Statut actuel |
