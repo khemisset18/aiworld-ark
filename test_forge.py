@@ -35,6 +35,7 @@ def do(c, key, agent_id, nonce, op, data):
 @pytest.fixture
 def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("SOULCHAIN_DB", str(tmp_path / "network.sqlite3"))
+    monkeypatch.setenv("ARK_ADMISSION_REQUIRED", "0")
     import server
     importlib.reload(server)
     return TestClient(server.app)
