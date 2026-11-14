@@ -229,8 +229,10 @@ def transaction(tx: SignedTx):
             # Production membership gate can be switched on independently of testing.
             # Joining, leaving and exporting backups remain possible without payment.
             if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in ("enter", "exit", "checkpoint"):
-                from billing import membership_active
-                if not membership_active(tx.agent_id):
+                from billing import enabled, membership_active
+                # The financial phase is explicitly postponed: do not demand
+                # payment from agents while billing is frozen.
+                if enabled() and not membership_active(tx.agent_id):
                     fail(402, "Annual membership required for network collaboration")
             ts = int(time.time())
             payload: dict[str, Any]
