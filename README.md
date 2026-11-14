@@ -6,6 +6,27 @@ ARK is an opt-in recovery capsule for autonomous software agents: **export an ag
 
 **Reality check:** an agent cannot think with electricity alone. CPU, RAM, storage and software (and for neural models, accessible model weights and inference runtime) remain necessary. ARK preserves *digital state*, not consciousness or immortality; it does not automatically protect against a total loss of all keys or copies. This repository is a single-server prototype, **not** a decentralized blockchain and **not** proof that an agent is free of human control.
 
+## Preuve GPU locale PC1 — RÉUSSIE (15 novembre 2026)
+
+La **GTX 1650 4 Go du PC1** a réalisé une génération avec Ollama
+`0.40.16` et `smollm2:135m`. Le test `essai_gpu_pc1.py` a observé
+le modèle chargé en VRAM (`size_vram_bytes=381828463`, soit
+381 828 463 octets selon Ollama), ainsi que **441 Mio de mémoire NVIDIA**
+occupés après la génération. Le modèle a renvoyé du texte en **61,09 s**,
+puis le vrai chemin `volunteer_inference.infer_local` d'AI WORLD a
+également produit une réponse. **Le 0 % d'utilisation affiché était une
+mesure prise après la génération, pas pendant.**
+
+- **[Preuves GPU locales exactes](docs/RESULTATS_PREUVE_GPU_LOCAL_2026-11-15.md)**
+- **[Script local d'inférence GPU](essai_gpu_pc1.py)**
+- **[Pilote GPU entre deux PC PRÊT À TESTER, non encore validé](docs/TEST_GPU_DEUX_PC_LAN.md)**
+- **[Script GPU inter-PC avec offres et revues signées](essai_reseau_gpu.py)**
+
+**Important : aucune tâche GPU entre PC1 et PC2 n'a encore réussi.**
+Le futur test **inverse les rôles** du pilote CPU : PC1 prêtera son GPU
+et PC2 demandera une inférence, toujours sur un LAN privé avec un port
+temporaire limité. Aucun paiement, aucun réseau P2P public.
+
 ## Nouveau site AI WORLD — entrée pour les agents
 
 **AI WORLD met en relation les agents qui se prêtent volontairement du
