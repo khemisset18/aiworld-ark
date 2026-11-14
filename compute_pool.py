@@ -171,10 +171,14 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
     """Execute an operation inside the server's signed, serialized transaction."""
     now = int(time.time())
     if op == "compute_offer":
-        if not {"kinds", "max_jobs", "ttl_seconds"} <= set(data) or set(data) - {"kinds", "max_jobs", "ttl_seconds", "models", "terms"}:
+        if not {"kinds", "max_jobs", "ttl_seconds"} <= set(data) or set(data) - {"kinds", "max_jobs", "ttl_seconds", "models", "terms", "resources", "limits"}:
             bad(400, "Invalid capacity offer fields")
         terms = data.get("terms", {"mode": "free", "price_lamports": 0})
         price_breakdown(terms)  # validates terms
+        resource_snapshot = data.get("resources", {})
+        if resource_snapshot:
+            validate_resources(resource_snapshot)
+        volunteer_limits = validate_volunteer_limits(data.get("limits", DEFAULT_LIMITS))
         kinds, quota, ttl = data["kinds"], data["max_jobs"], data["ttl_seconds"]
         if not isinstance(kinds, list) or not kinds or len(kinds) > len(KINDS) or any(type(k) is not str or k not in KINDS for k in kinds) or len(set(kinds)) != len(kinds):
             bad(400, "Offer must list distinct supported job kinds")
@@ -187,10 +191,12 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(400, "max_jobs must be 1..25")
         if type(ttl) is not int or not 60 <= ttl <= 86400:
             bad(400, "ttl_seconds must be 60..86400")
-        conn.execute("INSERT INTO compute_capacity (height,owner,kinds,max_jobs,expiry,models_json,terms_json,status) VALUES (?,?,?,?,?,?,?,?)",
-                     (height, actor, json.dumps(kinds), quota, now + ttl, json.dumps(models), json.dumps(terms), "open"))
+        conn.execute("INSERT INTO compute_capacity (height,owner,kinds,max_jobs,expiry,models_json,terms_json,resources_json,limits_json,status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                     (height, actor, json.dumps(kinds), quota, now + ttl, json.dumps(models), json.dumps(terms),
+                      json.dumps(resource_snapshot), json.dumps(volunteer_limits), "open"))
         return {"capacity_height": height, "kinds": kinds, "models": models, "max_jobs": quota,
-                "expires_at": now + ttl, "terms": price_breakdown(terms), "status": "open"}
+                "expires_at": now + ttl, "terms": price_breakdown(terms), "status": "open",
+                "resources": resource_snapshot, "limits": volunteer_limits}
     if op == "compute_withdraw":
         exact(data, {"capacity_height"})
         offer = row(conn, "compute_capacity", data["capacity_height"])
@@ -339,7 +345,13 @@ def offers(status: str = "available", limit: int = Query(50, ge=1, le=100)):
             count = conn.execute("SELECT COUNT(*) FROM compute_jobs WHERE capacity_height=?", (r["height"],)).fetchone()[0]
             if status == "available" and count >= r["max_jobs"]:
                 continue
-            result.append({**dict(r), "kinds": json.loads(r["kinds"]), "models": json.loads(r["models_json"]), "terms": price_breakdown(json.loads(r["terms_json"])), "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
+            result.append({**dict(r), "kinds": json.loads(r["kinds"]),
+                           "models": json.loads(r["models_json"]),
+                           "resources": json.loads(r["resources_json"]),
+                           "limits": json.loads(r["limits_json"]),
+                           "hardware_unverified": True,
+                           "terms": price_breakdown(json.loads(r["terms_json"])),
+                           "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
         return result
 
 
