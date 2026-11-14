@@ -7,6 +7,7 @@ per-agent authorization and an independent security audit.
 """
 from __future__ import annotations
 
+import binascii
 import hashlib
 import hmac
 import json
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
+from cryptography.exceptions import InvalidSignature
 
 from ark import MAX_CAPSULE_BYTES, canonical, verify
 
@@ -81,6 +83,8 @@ def create_app(
                 "ciphertext", "signature"
             }:
                 raise ValueError("Unexpected ARK capsule fields")
+            if type(envelope["created"]) is not int:
+                raise ValueError("Invalid creation timestamp")
             details = verify(envelope)
             normalized = canonical(envelope)
             if len(normalized) > MAX_WIRE_BYTES or details["encrypted_bytes"] > MAX_CAPSULE_BYTES:
@@ -88,9 +92,9 @@ def create_app(
             if digest is not None and hashlib.sha256(normalized).hexdigest() != digest:
                 raise ValueError("Capsule content hash mismatch")
             return envelope
-        except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, Exception) as exc:
-            # Corrupt or invalid signatures are client errors, never returned with secrets.
-            # This intentionally catches cryptography.InvalidSignature as well.
+        except (ValueError, TypeError, KeyError, UnicodeError, OverflowError,
+                AttributeError, binascii.Error, InvalidSignature) as exc:
+            # Reject corrupt data and invalid signatures without exposing sensitive inputs.
             raise HTTPException(400, "Invalid signed ARK capsule") from exc
 
     def load(agent_id: str, digest: str) -> bytes:
