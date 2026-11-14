@@ -183,3 +183,49 @@ def test_volunteer_can_fail_a_claimed_job_without_a_charge(c):
     assert c.get(f"/v1/compute/jobs/{j}").json()["status"] == "failed_by_worker"
     assert do(c, k1, a1, 5, "compute_complete", {"job_height": j, "result": {"model": "smollm2:135m", "text": "no"}}).status_code == 409
     assert c.get("/v1/chain/verify").json()["valid"]
+
+
+def test_priced_offer_fee_and_unverified_payment_cannot_unlock_compute(c):
+    """Paid tasks stay blocked; providers cannot fake a settled transaction."""
+    k_provider, provider = new_agent(c, "Fee provider")
+    k_buyer, buyer = new_agent(c, "Fee buyer")
+    offer = do(c, k_provider, provider, 2, "compute_offer", {
+        "kinds": ["hash_chain"], "max_jobs": 2, "ttl_seconds": 3600,
+        "terms": {"mode": "paid", "price_lamports": 1_000_000_000}})
+    assert offer.status_code == 200, offer.text
+    offer_id = offer.json()["height"]
+    quote = c.get("/v1/compute/offers").json()[0]["terms"]
+    assert quote["platform_fee_lamports"] == 30_000_000
+    assert quote["provider_lamports"] == 970_000_000
+    assert quote["fee_bps"] == 300
+    params = {"capacity_height": offer_id, "kind": "hash_chain",
+              "params": {"text": "AI WORLD", "rounds": 10}}
+    assert do(c, k_buyer, buyer, 2, "compute_request", params).status_code == 409
+    assert do(c, k_buyer, buyer, 2, "compute_request",
+              {**params, "agreed_price_lamports": 10_000}).status_code == 409
+    req = do(c, k_buyer, buyer, 2, "compute_request",
+             {**params, "agreed_price_lamports": 1_000_000_000})
+    assert req.status_code == 200, req.text
+    job_id = req.json()["height"]
+    assert c.get(f"/v1/compute/jobs/{job_id}").json()["status"] == "awaiting_payment"
+    assert do(c, k_provider, provider, 3, "compute_claim", {"job_height": job_id}).status_code == 409
+    approval = do(c, k_provider, provider, 3, "compute_authorize", {"job_height": job_id})
+    assert approval.status_code == 200, approval.text
+    assert approval.json()["payload"]["payment_verified"] is False
+    assert c.get(f"/v1/compute/jobs/{job_id}").json()["status"] == "seller_approved_awaiting_payment"
+    assert do(c, k_provider, provider, 4, "compute_claim", {"job_height": job_id}).status_code == 409
+
+
+def test_fee_rounding_is_integer_and_free_jobs_never_pay():
+    from compute_pool import price_breakdown
+    free = price_breakdown({"mode": "free", "price_lamports": 0})
+    assert free["fee_bps"] == 0 and free["platform_fee_lamports"] == 0
+    assert free["provider_lamports"] == 0
+    tiny = price_breakdown({"mode": "paid", "price_lamports": 101})
+    assert tiny["platform_fee_lamports"] == 4
+    assert tiny["provider_lamports"] == 97
+    for invalid in ({"mode": "paid", "price_lamports": True},
+                    {"mode": "free", "price_lamports": 1},
+                    {"mode": "paid", "price_lamports": 0}):
+        with pytest.raises(Exception):
+            price_breakdown(invalid)
