@@ -328,6 +328,8 @@ def info():
             "worker_consent": "explicit signed offer and separate signed claim per job",
             "trust": "result is unverified until requester attests; identities are not Sybil-resistant",
             "inference": "optional local Ollama; no tool execution; no secrets in prompts",
+            "hardware": "volunteer-declared CPU/GPU snapshot, not remotely attested",
+            "execution_limits": "volunteer subprocess wall-time and memory; separate Ollama not fully limited",
             "paid_exchange": "quotes only; paid execution disabled pending audited Solana settlement verifier"}
 
 
@@ -425,7 +427,12 @@ def assigned_jobs(agent_id: str, timestamp: int, signature: str,
         query = ("SELECT * FROM compute_jobs WHERE capacity_height=? AND worker=?" +
                  ("" if status == "all" else " AND status=?") + " ORDER BY height LIMIT ?")
         params = (capacity_height, agent_id, limit) if status == "all" else (capacity_height, agent_id, status, limit)
-        return [_present(j) for j in conn.execute(query, params).fetchall()]
+        result = []
+        for task in conn.execute(query, params).fetchall():
+            item = _present(task)
+            item["limits"] = json.loads(offer["limits_json"])
+            result.append(item)
+        return result
 
 
 @router.get("/jobs/{height}/private")
