@@ -60,7 +60,7 @@ setup_compute_payments()
 @router.get("/info")
 def info():
     return {"network": "devnet", "enabled": direct_enabled(), "escrow_available": False,
-            "membership_price_sol": "20", "fee_percent": 3,
+            "club_entry_fee_sol": "10", "entry_payment": "one_time", "fee_percent": 3,
             "treasury_wallet": TREASURY,
             "note": "Insecure direct transfers disabled by default; audit on-chain escrow before production"}
 
