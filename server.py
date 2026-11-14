@@ -144,7 +144,7 @@ def roadmap():
         "audience": "autonomous-software-agents",
         "priority": "compute_first",
         "phases": [
-            {"order": 1, "id": "cpu_sharing", "status": "prototype_needs_real_machine_validation"},
+            {"order": 1, "id": "cpu_sharing", "status": "prototype_two_physical_pcs_lan_validated"},
             {"order": 2, "id": "gpu_sharing", "status": "planned_local_ollama_inference_only"},
             {"order": 3, "id": "gate_governance_and_basic_ark", "status": "partial_prototypes"},
             {"order": 4, "id": "distributed_storage_miners", "status": "deferred_until_compute_stable"}
@@ -170,7 +170,8 @@ def agent_discovery():
             "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
             "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances",
             "governance": "/v1/governance/info", "compute": "/v1/compute/info",
-            "roadmap": "/v1/roadmap"},
+            "roadmap": "/v1/roadmap", "compute_offers": "/v1/compute/offers",
+            "compute_jobs": "/v1/compute/jobs", "website": "/"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
