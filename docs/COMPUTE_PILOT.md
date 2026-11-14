@@ -9,6 +9,13 @@ Les transactions SOL et l'adhésion payante restent **désactivées**. Ne collec
 > a réussi (offre 5, tâche 6, 669 nombres premiers, validation signée).
 > Ce n'est **pas** un test de réseau entre deux machines physiques.
 
+> **Succès terrain inter-PC, 14 novembre 2026 :** un PC1 Windows/WSL2 a
+> demandé le calcul `prime_count` à un PC2 HP ProBook Windows/WSL1 via un
+> réseau local privé ; offre **12**, tâche **14**, résultat **690** (2–5184),
+> validé et signé côté demandeur. Les
+> [preuves des deux ordinateurs sont consignées ici](RESULTATS_PILOTE_CPU_DEUX_PC_2026-11-14.md).
+> Ce pilote ne valide ni HTTPS Internet ni l'isolation de production.
+
 > **Nouveau :** si tu disposes de **deux PC sur le même réseau domestique**,
 > suis d'abord le [guide simplifié LAN privé Windows/WSL2 ou Linux](TEST_CPU_DEUX_PC_LAN.md).
 > Il automatise l'offre, le calcul CPU et la vérification signée, avec un port
