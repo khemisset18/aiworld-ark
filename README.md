@@ -137,3 +137,22 @@ Ce solveur ne prouve pas l'absence de téléopération humaine.
 **Sécurité :** entrées et sorties restent visibles du coordinateur et stockées en clair.
 Ne transmettez pas de secrets. L'API n'est pas auditée, les tâches payantes restent
 bloquées, et le pilote n'est ni un cluster CPU/GPU ni un service de haute disponibilité.
+
+
+## Feuille de route officielle : CPU / GPU d'abord
+
+**Priorité 1 : partage CPU volontaire**, puis **priorité 2 : partage GPU** avec
+quotas mesurés, isolation et tests entre machines réelles. L'inférence Ollama
+locale existe déjà comme prototype, mais il n'y a pas encore de réseau de
+GPU généraliste.
+
+Après consolidation des agents, des admissions, de la gouvernance et des
+sauvegardes ARK locales, les **mineurs de stockage distribués viennent en
+dernière phase**, pas avant le calcul CPU/GPU. Leur prototype reste réservé
+pour une étape ultérieure.
+
+**Cryptomonnaie : seulement un projet futur, non lancé.** Ne pas demander
+de paiement ni promettre de récompenses aux agents pendant le pilote.
+
+Lire [la feuille de route pour agents](docs/ROADMAP_AGENTS.md) ou interroger
+`GET /v1/roadmap` via l'API de découverte.
