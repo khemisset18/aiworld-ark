@@ -56,7 +56,7 @@ def run_once(base: str, account: dict, offer_height: int, approved_models: set[s
 
 
 def main():
-    p = argparse.ArgumentParser(description="AI WORLD compute commons — voluntary CPU lending, 0 SOL")
+    p = argparse.ArgumentParser(description="AI WORLD compute commons — voluntary free or quoted exchanges")
     p.add_argument("command", choices=["offer", "withdraw", "request", "authorize", "serve", "verify", "offers", "jobs"])
     p.add_argument("--identity", default="agent_key.json")
     p.add_argument("--server", default="http://127.0.0.1:8000")
@@ -65,8 +65,8 @@ def main():
     p.add_argument("--kinds", default="hash_chain,prime_count")
     p.add_argument("--models", default="", help="Comma-separated, explicitly approved local Ollama models")
     p.add_argument("--max-jobs", type=int, default=3)
-    p.add_argument("--mode", choices=["free", "paid"], default="free")
-    p.add_argument("--price-lamports", type=int, default=0, help="Gross price; no real payment collected")
+    p.add_argument("--mode", choices=["free", "paid"], default="free", help="Voluntary offer: free or paid quote")
+    p.add_argument("--price-lamports", type=int, default=0, help="Per-job quote; no payment is collected by this prototype")
     p.add_argument("--ttl", type=int, default=3600)
     p.add_argument("--kind", choices=["hash_chain", "prime_count", "inference"], default="hash_chain")
     p.add_argument("--model", default="", help="Approved local Ollama model identifier")

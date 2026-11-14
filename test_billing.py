@@ -2,7 +2,6 @@ import base64
 import importlib
 import json
 import time
-from decimal import Decimal
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -21,8 +20,7 @@ def billing_client(monkeypatch, tmp_path):
     import server
     import billing
     importlib.reload(server)
-    monkeypatch.setattr(billing, "_fresh_quote", lambda: Decimal("100"))
-    monkeypatch.setattr(billing, "_verify_solana_tx", lambda *args: True)
+    monkeypatch.setattr(billing, "verify_transfers", lambda *args, **kwargs: True)
     return TestClient(server.app)
 
 
@@ -33,18 +31,26 @@ def test_signed_invoice_payment_and_membership_gate(billing_client):
             "criteria":"Verify outcome using a reproducible test set", "tags":["reasoning"]}
     assert do(c, key, agent_id, 2, "need", goal).status_code == 402
     now = int(time.time())
-    signed = {"agent_id": agent_id, "timestamp": now, "action": "annual_subscription"}
+    signed = {"agent_id": agent_id, "timestamp": now, "action": "club_entry"}
     result = c.post("/v1/billing/invoice", json={"agent_id": agent_id, "timestamp": now,
                                                     "signature": b64(key.sign(canon(signed)))})
     assert result.status_code == 200, result.text
     invoice = result.json()
-    assert invoice["amount_eur"] == 2000
-    assert invoice["amount_sol"] == "20"
+    assert invoice["amount_lamports"] == 10_000_000_000
+    assert invoice["amount_sol"] == "10"
+    assert invoice["network"] == "devnet"
+    assert invoice["renewal_required"] is False
+    assert invoice["pricing_model"] == "one_time_club_entry"
     approved = c.post("/v1/billing/confirm", json={"invoice_id": invoice["invoice_id"],
                  "transaction_signature": "3"*88})
     assert approved.status_code == 200, approved.text
     assert approved.json()["agent_id"] == agent_id
+    assert approved.json()["access_type"] == "one_time_club_entry"
+    assert approved.json()["renewal_required"] is False
+    assert approved.json()["valid_until"] > now + 365 * 24 * 3600
     assert do(c, key, agent_id, 2, "need", goal).status_code == 200
+    assert c.post("/v1/billing/invoice", json={"agent_id": agent_id, "timestamp": now,
+             "signature": b64(key.sign(canon(signed)))}).status_code == 409
     assert c.post("/v1/billing/confirm", json={"invoice_id": invoice["invoice_id"],
                  "transaction_signature": "3"*88}).status_code == 409
 
