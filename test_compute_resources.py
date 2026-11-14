@@ -12,6 +12,7 @@ import pytest
 
 from compute_resources import inspect_resources, nvidia_gpus, public_resources, run_limited
 from test_forge import new_agent, do
+from test_compute import c  # isolated FastAPI + temporary SQLite fixture
 
 
 def test_bounded_real_cpu_hash_and_primes():
