@@ -56,7 +56,9 @@ def private_job(base: str, account: dict, height: int):
 def run_once(base: str, account: dict, offer_height: int, approved_models: set[str] | None = None) -> int:
     # The same provider identity may recover its own stale claims after a restart.
     for stale in assigned(base, account, offer_height, "claimed"):
-        if stale["lease_expires_at"] is not None and stale["lease_expires_at"] <= int(time.time()):
+        deadline = (stale["lease_expires_at"] if stale["lease_expires_at"] is not None
+                    else stale["updated_at"] + 180)
+        if deadline <= int(time.time()):
             transact(base, account, "compute_recover", {"job_height": stale["height"]})
     jobs = assigned(base, account, offer_height)
     for job in jobs:
