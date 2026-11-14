@@ -66,6 +66,60 @@ l'environnement exécutant le worker.
 [Support GPU NVIDIA dans Ollama](https://docs.ollama.com/gpu),
 [Observation GPU avec `ollama ps`](https://docs.ollama.com/faq).
 
+## Vérification supplémentaire — 15 novembre 2026, Ubuntu WSL2
+
+**Sorties réelles fournies par l'opérateur sur PC1 :**
+
+```text
+Windows NVIDIA GeForce GTX 1650, 52 C, 0 %, 0/4096 MiB, pilote 610.91
+Ubuntu WSL2 NVIDIA-SMI 610.59 / KMD 610.91 / CUDA UMD 13.3
+Ubuntu WSL2 NVIDIA GeForce GTX 1650, 68 C, P8, 2 W / 50 W, 0/4096 MiB, 0 % GPU
+Ubuntu WSL2: OLLAMA_NON_INSTALLE
+```
+
+**Bilan vérifié :** le périphérique NVIDIA est visible **dans Ubuntu WSL2**
+et le pilote est présent. **Ollama n'est pas installé dans Ubuntu**.
+L'écart entre les deux lectures (52 °C puis **68 °C au repos**) doit être
+surveillé avant de lancer un modèle. Les relevés ne constituent **aucune**
+preuve d'inférence GPU.
+
+### Suite immédiate sans lancer de calcul
+
+Sur Windows PowerShell **PC1**, effectuer seulement des lectures de
+température et d'utilisation à quelques secondes d'intervalle :
+
+```powershell
+1..3 | ForEach-Object {
+  nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,memory.used,power.draw --format=csv,noheader
+  Start-Sleep -Seconds 15
+}
+```
+
+Ne pas lancer d'inférence si la température monte fortement au repos,
+approche 85–90 °C, s'il y a instabilité ou ventilation anormale. Vérifier
+le refroidissement. Ces chiffres sont des repères prudents de laboratoire,
+pas une limite universelle de la GTX 1650.
+
+**Quand le refroidissement est vérifié**, installer Ollama **dans Ubuntu
+WSL2 sur PC1**, et non uniquement sur Windows et pas sur le PC2 WSL1 :
+
+```bash
+sudo apt update
+sudo apt install -y curl
+curl -fsSL https://ollama.com/install.sh | sh
+ollama --version
+```
+
+C'est la méthode officielle d'installation Linux
+([documentation Ollama](https://docs.ollama.com/linux)). Cette commande
+télécharge et exécute un installateur distant avec des permissions système :
+n'utiliser que le domaine officiel et ne pas ajouter de dépôt inconnu.
+
+Si `ollama serve` ne fonctionne pas parce que le service est déjà lancé,
+vérifier d'abord `curl http://127.0.0.1:11434/api/version`.
+**Ne télécharger ni lancer de modèle dans cette étape.** Il faudra ensuite
+prouver l'accélération GPU réelle et le retour du résultat au PC2.
+
 ## Étape 1 — Architecture de la preuve (quand la température sera normale)
 
 Le coordinateur reste sur PC1. **On inverse les rôles du pilote CPU** : cette fois, le PC1 héberge le volontaire GPU ; le PC2 demande une réponse générée par un modèle autorisé.
