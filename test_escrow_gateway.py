@@ -132,3 +132,41 @@ def test_gateway_rejects_rpc_outage_without_changing_job(demo):
         "job_height": height, "escrow_address": address}).status_code == 503
     assert c.get(f"/v1/compute/jobs/{height}").json()["status"] == (
         "seller_approved_awaiting_payment")
+
+
+@pytest.mark.parametrize("onchain_final,expected_status,expected_fee,expected_refund", [
+    (3, "released_to_provider", 30_000_000, 0),
+    (4, "refunded_to_buyer", 0, 1_000_000_000),
+])
+def test_reconcile_exact_onchain_final_state(demo, onchain_final, expected_status,
+                                            expected_fee, expected_refund):
+    c, gw, monkeypatch, height, address, account = demo
+    onchain = [account, 12345]
+    monkeypatch.setattr(gw, "get_finalized_account", lambda _: tuple(onchain))
+    assert c.post("/v1/escrow/confirm-funded", json={
+        "job_height": height, "escrow_address": address}).status_code == 200
+
+    # Before on-chain finalization, no financial completion can be declared.
+    pending = c.post("/v1/escrow/reconcile-final", json={
+        "job_height": height, "escrow_address": address})
+    assert pending.status_code == 409
+
+    fields = list(gw.STATE.unpack(base64.b64decode(account["data"][0])[8:]))
+    fields[9] = onchain_final
+    fields[10] = bytes([18] * 32)  # a delivery digest or mutually agreed outcome
+    raw = gw.DISCRIMINATOR + gw.STATE.pack(*fields)
+    onchain[0] = {**account, "lamports": 2_000_000,
+                  "data": [base64.b64encode(raw).decode(), "base64"]}
+    response = c.post("/v1/escrow/reconcile-final", json={
+        "job_height": height, "escrow_address": address})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == expected_status
+    assert response.json()["platform_fee_lamports"] == expected_fee
+    assert response.json()["buyer_refund_lamports"] == expected_refund
+    recorded = c.get(f"/v1/escrow/receipts/{height}")
+    assert recorded.status_code == 200
+    assert recorded.json()["final_status"] == expected_status
+    again = c.post("/v1/escrow/reconcile-final", json={
+        "job_height": height, "escrow_address": address})
+    assert again.status_code == 200
+    assert again.json()["already_reconciled"] is True
