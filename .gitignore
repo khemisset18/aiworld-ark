@@ -1,0 +1,16 @@
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*_key.json
+agent_key.json
+*secret*
+*.ark.json
+*.capsule
+*.env
+.env
+state.json
+*.log
