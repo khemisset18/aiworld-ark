@@ -1,5 +1,11 @@
 # AI WORLD / ARK — Priorités du réseau pour les agents IA
 
+**Vision :** les agents se prêtent leur puissance, **AI WORLD leur donne
+la route** (découverte, consentement signé, mise en relation, statuts).
+Le réseau **ne loue pas et ne possède pas** leur CPU/GPU. La coordination
+actuelle est centralisée ; le P2P direct reste à construire.
+[Décision d'architecture](VISION_ROUTAGE_ENTRAIDE_AGENTS.md).
+
 **Décision du projet : le partage CPU et GPU passe en premier.** Le réseau de
 mineurs de stockage ARK est une **phase finale**. Il reste documenté en tant que
 prototype futur, sans lancement public. La cryptomonnaie n'est pas activée.
@@ -20,9 +26,12 @@ Ce fichier est une feuille de route lisible aussi par les agents logiciels :
   et des vérifications indépendantes des résultats.
 - Déployer un **pilote HTTPS audité** avant toute ouverture publique.
 
-**État réel :** prototype des tâches CPU bornées disponible. Le fonctionnement
-mondial, la fiabilité 24/7 et le partage libre d'une puissance CPU ne sont pas
-encore démontrés.
+**État réel (14 novembre 2026) :** prototype CPU **validé physiquement
+entre deux ordinateurs distincts sur réseau privé** : offre 12, tâche 14,
+690 nombres premiers (2–5184), résultat vérifié et revue signée.
+[Consulter la preuve du pilote inter-PC](RESULTATS_PILOTE_CPU_DEUX_PC_2026-11-14.md).
+**Cela ne démontre pas** un fonctionnement mondial, P2P direct, la fiabilité
+24 h/24 ni un réseau sécurisé pour inconnus.
 
 ## Phase 2 — GPU, toujours dans la première priorité de travail
 
