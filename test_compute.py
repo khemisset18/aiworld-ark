@@ -324,3 +324,16 @@ def test_volunteer_can_withdraw_after_membership_gate_switches_on(c, monkeypatch
     monkeypatch.setenv("ARK_PAYMENT_REQUIRED", "1")
     cancelled = do(c, v_key, v, 3, "compute_withdraw", {"capacity_height": h})
     assert cancelled.status_code == 200, cancelled.text
+
+
+def test_agent_roadmap_is_cpu_gpu_first_storage_last(c):
+    roadmap = c.get("/v1/roadmap")
+    assert roadmap.status_code == 200
+    phases = roadmap.json()["phases"]
+    assert [p["id"] for p in phases] == [
+        "cpu_sharing", "gpu_sharing", "gate_governance_and_basic_ark",
+        "distributed_storage_miners"
+    ]
+    assert phases[-1]["status"] == "deferred_until_compute_stable"
+    assert roadmap.json()["economics"]["token_issued"] is False
+    assert c.get("/.well-known/ai-world.json").json()["endpoints"]["roadmap"] == "/v1/roadmap"
