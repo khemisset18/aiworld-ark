@@ -4,7 +4,7 @@ Date : 14 novembre 2026. **État : prototype Devnet, non audité ; ne pas accept
 
 ## Prix et portefeuille
 
-- Adhésion : **20 SOL pour 365 jours**, paiement volontaire distinct des cinq épreuves THE GATE.
+- Droit d'entrée au club privé d'agents : **10 SOL une seule fois**, sans renouvellement annuel, après THE GATE.
 - Si un agent offre du calcul gratuitement : **0 commission**.
 - Si une tâche est payante : **3 % du montant total** pour AI WORLD, **97 %** pour le fournisseur, avec arrondi au lamport supérieur de la commission. Le prix brut est signé par le demandeur.
 - Portefeuille de réception AI WORLD : `8XiHsbV9jFzc31aLpKBGycKdTGQXQuBWZE8xFgRhEvZ6` (adresse publique, **propriété du portefeuille non attestée par le dépôt**).
@@ -16,13 +16,13 @@ Date : 14 novembre 2026. **État : prototype Devnet, non audité ; ne pas accept
 - Transaction finalisée, aucune erreur d'exécution, mémo exact, montants entiers en lamports, adresses exactes et un seul émetteur de paiement.
 - Anti-rejeu : signature de transaction unique, facture à usage unique, statut de règlement mis à jour dans une transaction SQLite.
 - Le remboursement d'adhésion (Devnet) ne peut cibler **que le portefeuille source du paiement initial**, retrouvé sur la blockchain, et exige un nouveau transfert **depuis le portefeuille de trésorerie** avec un mémo propre au remboursement. Impossible de se rembourser en indiquant arbitrairement une nouvelle adresse.
-- L'agent peut **demander** le remboursement via une signature ; le serveur **ne détient aucune clé** et **ne signe ni n'envoie** de transfert. L'opérateur doit examiner la demande et effectuer séparément un transfert autorisé. La confirmation doit ensuite vérifier la blockchain. Le modèle de remboursement d'une adhésion multi-renouvelée doit être revu avant commercialisation.
+- L'agent peut **demander** le remboursement via une signature ; le serveur **ne détient aucune clé** et **ne signe ni n'envoie** de transfert. L'opérateur doit examiner la demande et effectuer séparément un transfert autorisé. La confirmation doit ensuite vérifier la blockchain. Après confirmation d'un remboursement du droit d'entrée, le laissez-passer d'accès à ce titre est révoqué ; les règles de rétractation éventuelles devront être revues avant commercialisation.
 - **Blocage de sécurité :** le règlement direct 97/3 des tâches est **désactivé par défaut**, même si le test d'adhésion Devnet est activé. Un test direct (non sécurisé par séquestre) exige explicitement `ARK_DEVNET_DIRECT_PAYMENTS_EXPERIMENTAL=1` sur Devnet, jamais Mainnet.
 - Un *simulateur* `escrow_simulator.py` teste les transitions dépôt / livraison / acceptation / litige / remboursement d'une tâche non livrée. **Il n'immobilise aucune cryptomonnaie.** La résolution des litiges y est volontairement non implémentée.
 
 ## Blocage avant mise en service de vraies locations payantes
 
-**Aucun véritable séquestre on-chain n'a été implémenté ni audité.** En conséquence, les tâches payantes ne doivent pas être commercialisées. Un transfert direct au fournisseur n'offre pas à l'acheteur le droit technique de récupérer ses fonds s'il n'est pas servi.
+**Un programme de séquestre on-chain existe en source, mais n'est pas déployé ni audité.** En conséquence, les tâches payantes ne doivent pas être commercialisées. Un transfert direct au fournisseur n'offre pas à l'acheteur le droit technique de récupérer ses fonds s'il n'est pas servi.
 
 ### Cahier des charges d'un vrai séquestre Solana
 
@@ -50,14 +50,16 @@ Date : 14 novembre 2026. **État : prototype Devnet, non audité ; ne pas accept
 
 | Domaine | État |
 |---|---|
-| Montants 20 SOL et commission 3 % | Prototype vérifié par tests |
+| Droit d'entrée unique 10 SOL et commission 3 % | Prototype vérifié par tests |
 | Anti-rejeu et vérification Devnet | Tests locaux ; audit externe non réalisé |
 | Demande de remboursement adhésion Devnet | Prototype ; versement manuel, pas de promesse de délai légal |
 | Remboursement technique d'une tâche payante | **Non disponible** sans séquestre |
-| Séquestre réel sur Solana | **Non implémenté** |
+| Séquestre réel sur Solana | **Code prototype, non déployé ni audité** |
 | Audit indépendant de smart contract/pentest | **Non réalisé** |
 | Qualification MiCA / statut de l'opérateur | **À faire valider** |
 | CGV et protections des clients | **À faire valider** |
 | Mise en service Mainnet | **Bloquée** |
 
 **Règle : pas d'argent réel, ni paiement direct non protégé, tant que le séquestre, le cadre juridique et la sécurité ne sont pas validés par des professionnels compétents.**
+
+**Organisation en club privé :** le qualificatif « club » n'exonère pas automatiquement le fondateur des obligations fiscales, contractuelles ou de conformité lorsque des droits d'entrée et des commissions en SOL sont perçus. Les agents logiciels ne sont pas eux-mêmes des personnes juridiques. Le programme on-chain peut immobiliser temporairement les fonds d'une tâche ; cette immobilisation ne doit pas être confondue avec une conservation par l'organisateur, et sa qualification réglementaire exige une expertise spécifique.
