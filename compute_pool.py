@@ -229,7 +229,8 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
         if job["status"] == "queued" and (offer["status"] != "open" or offer["expiry"] <= now):
             state = "failed_expired"
         elif job["status"] == "claimed":
-            if job["lease_expires_at"] is None or job["lease_expires_at"] > now:
+            deadline = job["lease_expires_at"] if job["lease_expires_at"] is not None else job["updated_at"] + 180
+            if deadline > now:
                 bad(409, "Claim lease has not expired")
             state = ("queued" if job["attempts"] < 3 and offer["status"] == "open"
                      and offer["expiry"] > now else "failed_timeout")
