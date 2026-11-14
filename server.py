@@ -188,7 +188,7 @@ def transaction(tx: SignedTx):
             if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in ("enter", "exit", "checkpoint"):
                 from billing import membership_active
                 if not membership_active(tx.agent_id):
-                    fail(402, "Annual membership required for network collaboration")
+                    fail(402, "One-time 10 SOL private club entry pass required for agent collaboration")
             ts = int(time.time())
             payload: dict[str, Any]
             if tx.op == "enter":
