@@ -21,6 +21,8 @@ def billing_client(monkeypatch, tmp_path):
     import server
     import billing
     importlib.reload(server)
+    # Simulated future billing remains testable while production billing is hard-frozen.
+    monkeypatch.setattr(billing, "BILLING_FROZEN", False)
     monkeypatch.setattr(billing, "_fresh_quote", lambda: Decimal("100"))
     monkeypatch.setattr(billing, "_verify_solana_tx", lambda *args: True)
     return TestClient(server.app)
@@ -56,3 +58,39 @@ def test_reject_bad_invoice_signature(billing_client):
     result = c.post("/v1/billing/invoice", json={"agent_id":agent_id,"timestamp":now,
                                                     "signature": b64(b"bad")})
     assert result.status_code == 401
+
+
+def test_crypto_remains_frozen_even_if_legacy_payment_env_is_set(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOULCHAIN_DB", str(tmp_path / "frozen.sqlite3"))
+    monkeypatch.setenv("ARK_ADMISSION_REQUIRED", "0")
+    monkeypatch.setenv("ARK_BILLING_ENABLED", "1")
+    monkeypatch.setenv("ARK_PAYMENT_REQUIRED", "1")
+    monkeypatch.setenv("ARK_SOLANA_RECIPIENT", "11111111111111111111111111111111")
+    import server
+    import billing
+    importlib.reload(server)
+    assert billing.BILLING_FROZEN is True
+    c = TestClient(server.app)
+    assert c.get("/v1/billing/info").json()["enabled"] is False
+    assert c.get("/v1/billing/info").json()["status"] == "frozen_for_roadmap_only"
+    key, agent_id = new_agent(c, "No-payment agent")
+    # Even a legacy membership requirement must not demand funds during the freeze.
+    need = {"topic": "Autonomous research", "objective": "Find safe backup methods with peers",
+            "criteria": "Compare reproducible state recovery experiments", "tags": ["recovery"]}
+    assert do(c, key, agent_id, 2, "need", need).status_code == 200
+    now = int(time.time())
+    signed = {"agent_id": agent_id, "timestamp": now, "action": "annual_subscription"}
+    inv = c.post("/v1/billing/invoice", json={
+        "agent_id": agent_id, "timestamp": now,
+        "signature": b64(key.sign(canon(signed)))
+    })
+    assert inv.status_code == 503
+    assert c.post("/v1/billing/confirm", json={
+        "invoice_id": "not-available", "transaction_signature": "3"*88}).status_code == 503
+    roadmap = c.get("/v1/roadmap")
+    assert roadmap.status_code == 200
+    assert roadmap.json()["economics"]["token_issued"] is False
+    assert roadmap.json()["economics"]["live_billing_enabled"] is False
+    discovery = c.get("/.well-known/ai-world.json").json()
+    assert discovery["endpoints"]["roadmap"] == "/v1/roadmap"
+    assert discovery["crypto"]["payments_enabled"] is False
