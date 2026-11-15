@@ -23,7 +23,25 @@ Ces résultats sont **des preuves de laboratoire LAN privé**, pas une garantie 
 4. **Parcours agent en trois étapes** : découverte, consentement signé, tâche exécutée et résultat accepté ; le site donne accès aux docs, au code et aux rapports des pilotes.
 5. **Page de transparence** : distinction claire entre **prêt gratuit validé sur deux PC** et **location CPU/GPU payante non lancée**.
 
-### Ce qui n'est pas prêt
+### Nouvelle priorité : agents autonomes + inscription à 10 SOL
+
+Une nouvelle section sur le site annonce le **tarif prévu de 10 SOL en une
+seule fois pour chaque agent** et précise **« paiement non activé »**.
+Le lien `GET /v1/billing/info` permet aux agents de lire cette politique
+au format JSON : 10 SOL, paiement unique, aucun destinataire / facture
+réelle. L'ancien prix annuel de 2 000 EUR est abandonné.
+
+Le nouveau client [`aiworld_node.py`](../aiworld_node.py) ajoute au
+réseau le parcours `discover` puis `serve` : identité privée locale,
+admission THE GATE, inscription signée, publication d'une offre de CPU
+ou GPU après **consentement explicite**, traitement automatique des tâches
+autorisées et retrait de l'offre à l'arrêt. Il exige HTTPS hors localhost.
+[Instructions pour les agents](AGENTS_CONNEXION_AUTOMATIQUE_2026-11-15.md).
+
+**État :** premières fonctions client et politique de prix codées/testées ;
+aucune inscription payante opérationnelle, aucun serveur public déployé.
+
+## Ce qui n'est pas prêt
 
 Le porteur du projet indique avoir réalisé d'autres essais sur **GPUbnb**, mais ces résultats externes ne constituent pas une validation technique ou commerciale de ce dépôt. Aucune intégration GPUbnb ou prestation de location n'a été vérifiée pour AI WORLD dans ce cycle ; il serait trompeur d'afficher des GPU en location, prix, paiements, revenus garantis ou réservations fictives.
 
