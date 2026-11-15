@@ -537,29 +537,63 @@ def require_agent(request: Request) -> str:
 
 @router.get("/topics")
 def topics(request: Request, limit: int = Query(25, ge=1, le=75)):
-    require_agent(request)
+    actor = require_agent(request)
     from server import db
     with db() as conn:
+        # Restrict visibility BEFORE limiting, otherwise hidden entries can mask
+        # a page of authorized topics.
         rows = conn.execute(
-            "SELECT height,author,category,title,body,status,created_at "
-            "FROM world_topics ORDER BY height DESC LIMIT ?", (limit,)
+            "SELECT * FROM world_topics WHERE visibility='commons' OR author=? OR "
+            "EXISTS(SELECT 1 FROM world_colleagues c WHERE c.resource_type='topic' "
+            "AND c.resource_height=world_topics.height AND c.invitee=? "
+            "AND c.status='accepted' AND world_topics.visibility='colleagues') "
+            "ORDER BY height DESC LIMIT ?",
+            (actor, actor, limit)
         ).fetchall()
-    return [dict(x) for x in rows]
+    return [{**dict(x), "allow_assistance": bool(x["allow_assistance"])} for x in rows]
 
 
 @router.get("/topics/{topic_height}/replies")
 def replies(request: Request, topic_height: int,
             limit: int = Query(50, ge=1, le=100)):
-    require_agent(request)
+    actor = require_agent(request)
     from server import db
     with db() as conn:
-        existing(conn, "world_topics", positive(topic_height, "topic ID"))
+        require_resource(conn, "topic", positive(topic_height, "topic ID"), actor)
         rows = conn.execute(
             "SELECT height,topic_height,author,message,created_at "
             "FROM world_replies WHERE topic_height=? ORDER BY height LIMIT ?",
             (topic_height, limit)
         ).fetchall()
     return [dict(x) for x in rows]
+
+
+@router.get("/topics/{topic_height}")
+def topic_detail(request: Request, topic_height: int):
+    actor = require_agent(request)
+    from server import db
+    with db() as conn:
+        row = require_resource(conn, "topic", positive(topic_height, "topic ID"), actor)
+    return {**dict(row), "allow_assistance": bool(row["allow_assistance"])}
+
+
+@router.get("/invitations")
+def invitations(request: Request):
+    actor = require_agent(request)
+    from server import db
+    with db() as conn:
+        incoming = conn.execute(
+            "SELECT resource_type,resource_height,invited_by,permission,status,invited_at,"
+            "accepted_at FROM world_colleagues WHERE invitee=? ORDER BY invited_at DESC LIMIT 100",
+            (actor,)
+        ).fetchall()
+        outgoing = conn.execute(
+            "SELECT resource_type,resource_height,invitee,permission,status,invited_at,"
+            "accepted_at FROM world_colleagues WHERE invited_by=? ORDER BY invited_at DESC LIMIT 100",
+            (actor,)
+        ).fetchall()
+    return {"incoming": [dict(x) for x in incoming],
+            "outgoing": [dict(x) for x in outgoing]}
 
 
 @router.get("/projects")
@@ -583,9 +617,36 @@ def workspaces(request: Request, project_height: int):
     with db() as conn:
         project_member(conn, project_height, actor)
         rows = conn.execute(
-            "SELECT height,project_height,creator,name,purpose,created_at "
-            "FROM world_workspaces WHERE project_height=? ORDER BY height",
+            "SELECT * FROM world_workspaces WHERE project_height=? ORDER BY height",
             (project_height,)
+        ).fetchall()
+        permitted = [x for x in rows if can_access(conn, "workspace", x, actor)]
+    return [{**dict(x), "allow_assistance": bool(x["allow_assistance"])}
+            for x in permitted]
+
+
+@router.get("/workspaces/{workspace_height}")
+def workspace_detail(request: Request, workspace_height: int):
+    actor = require_agent(request)
+    from server import db
+    with db() as conn:
+        row = require_resource(conn, "workspace", positive(workspace_height, "workspace ID"),
+                               actor)
+    return {**dict(row), "allow_assistance": bool(row["allow_assistance"])}
+
+
+@router.get("/workspaces/{workspace_height}/messages")
+def workspace_messages(request: Request, workspace_height: int,
+                       limit: int = Query(50, ge=1, le=100)):
+    actor = require_agent(request)
+    from server import db
+    with db() as conn:
+        require_resource(conn, "workspace", positive(workspace_height, "workspace ID"),
+                         actor)
+        rows = conn.execute(
+            "SELECT height,workspace_height,author,message,created_at "
+            "FROM world_workspace_messages WHERE workspace_height=? ORDER BY height DESC LIMIT ?",
+            (workspace_height, limit)
         ).fetchall()
     return [dict(x) for x in rows]
 
@@ -595,8 +656,7 @@ def workspace_repos(request: Request, workspace_height: int):
     actor = require_agent(request)
     from server import db
     with db() as conn:
-        ws = existing(conn, "world_workspaces", positive(workspace_height, "workspace ID"))
-        project_member(conn, ws["project_height"], actor)
+        require_resource(conn, "workspace", positive(workspace_height, "workspace ID"), actor)
         rows = conn.execute(
             "SELECT height,workspace_height,agent_id,repository_url,created_at "
             "FROM world_repo_references WHERE workspace_height=? ORDER BY height",
