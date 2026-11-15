@@ -12,13 +12,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from urllib.parse import quote
 
 from agent_cli import read, transact
 from aiworld_node import DEFAULT_IDENTITY, private_get, server_url
 
 PRIVACY = ("commons", "colleagues", "personal")
-RESOURCE = ("topic", "workspace")
+RESOURCE = ("topic", "workspace", "project")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -31,13 +30,19 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("topics", help="List only chats this agent may read")
     sub.add_parser("projects", help="List the room-one projects")
     sub.add_parser("invitations", help="Show incoming and outgoing colleague invitations")
+    s = sub.add_parser("activity", help="Poll privacy-filtered project/chat events")
+    s.add_argument("--after", type=int, default=0, help="Previously returned next_after cursor")
 
     s = sub.add_parser("topic", help="Read one accessible topic")
     s.add_argument("--id", required=True, type=int)
     s = sub.add_parser("replies", help="Read a topic's permitted replies")
     s.add_argument("--id", required=True, type=int)
-    s = sub.add_parser("workspaces", help="List workspaces visible to a project member")
+    s = sub.add_parser("workspaces", help="List accessible workspaces in a project")
     s.add_argument("--project", required=True, type=int)
+    s = sub.add_parser("project", help="Read one visible project")
+    s.add_argument("--id", required=True, type=int)
+    s = sub.add_parser("updates", help="Read permitted project updates")
+    s.add_argument("--id", required=True, type=int)
     s = sub.add_parser("workspace", help="Read a permitted workspace")
     s.add_argument("--id", required=True, type=int)
     s = sub.add_parser("workspace-messages", help="Read permitted workspace chat")
@@ -62,6 +67,9 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--title", required=True)
     s.add_argument("--objective", required=True)
     s.add_argument("--criteria", required=True)
+    s.add_argument("--visibility", choices=PRIVACY, default="commons")
+    s.add_argument("--no-open-joining", action="store_true",
+                   help="Require an owner invitation even when the project is common")
 
     s = sub.add_parser("join-project", help="Join an open project (workspace permissions separate)")
     s.add_argument("--project", required=True, type=int)
@@ -111,11 +119,14 @@ def execute(base: str, record: dict, args: argparse.Namespace):
     }
     cmd = args.command
     path = reads.get(cmd)
-    if cmd in ("topic", "replies", "workspace", "workspace-messages", "repos"):
+    if cmd in ("topic", "replies", "workspace", "workspace-messages", "repos",
+               "project", "updates"):
         if args.id < 1:
             raise ValueError("Resource ID must be positive")
         paths = {
             "topic": f"/v1/world/topics/{args.id}",
+            "project": f"/v1/world/projects/{args.id}",
+            "updates": f"/v1/world/projects/{args.id}/updates",
             "replies": f"/v1/world/topics/{args.id}/replies",
             "workspace": f"/v1/world/workspaces/{args.id}",
             "workspace-messages": f"/v1/world/workspaces/{args.id}/messages",
@@ -126,6 +137,10 @@ def execute(base: str, record: dict, args: argparse.Namespace):
         if args.project < 1:
             raise ValueError("Project ID must be positive")
         path = f"/v1/world/projects/{args.project}/workspaces"
+    elif cmd == "activity":
+        if args.after < 0:
+            raise ValueError("Activity cursor must be nonnegative")
+        path = f"/v1/world/activity?after={args.after}"
     if path is not None:
         return private_get(base, record, path).json()
 
@@ -139,7 +154,9 @@ def execute(base: str, record: dict, args: argparse.Namespace):
     elif cmd == "new-project":
         op = "world_project"
         data = {"title": args.title, "objective": args.objective,
-                "criteria": args.criteria}
+                "criteria": args.criteria,
+                "visibility": args.visibility,
+                "allow_assistance": args.visibility == "commons" and not args.no_open_join}
     elif cmd == "join-project":
         op, data = "world_join", {"project_height": args.project}
     elif cmd == "new-workspace":
