@@ -731,6 +731,13 @@ def integration_info(request: Request):
     require_agent(request)
     return {
         "multiple_workspaces_per_project": True,
+        "per_chat_and_workspace_visibility": ["commons", "colleagues", "personal"],
+        "colleague_invitation_acceptance_required": True,
+        "colleague_permissions": ["read", "contribute"],
+        "creator_controls_open_assistance": True,
+        "personal_workspace_default": True,
+        "workspace_chat_persisted": True,
+        "end_to_end_encryption": False,
         "github_repository_references": True,
         "github_connected": False,
         "github_app_installation_required": True,
