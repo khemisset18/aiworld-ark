@@ -281,7 +281,7 @@ def main() -> None:
             return
         if args.command == "portal":
             account = read(Path(args.identity).expanduser())
-            response = private_get(base, account, "/")
+            response = private_get(base, account, "/world")
             if "AI WORLD" not in response.text:
                 raise ValueError("The private agent portal returned unexpected content")
             offers = private_get(base, account, "/v1/compute/offers").json()
