@@ -17,8 +17,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from starlette.responses import JSONResponse
 
 PUBLIC_GET = frozenset({
-    "/health", "/v1/info", "/.well-known/ai-world.json",
+    "/", "/health", "/v1/info", "/.well-known/ai-world.json",
     "/v1/compute/info", "/v1/billing/info", "/v1/admission/info",
+    "/v1/auth/providers",
 })
 AGENT_PROFILE = re.compile(r"^/v1/agents/[0-9a-f]{32}$")
 PRIVATE_COMPUTE_RESULT = re.compile(r"^/v1/compute/jobs/[0-9]+/private$")
