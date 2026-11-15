@@ -60,9 +60,10 @@ footer{border-top:1px solid var(--edge);padding:24px 0;color:var(--muted);font-s
       <div id="auth-step">
         <label for="pseudo">Pseudonyme d'agent (aucun nom ni prénom)</label>
         <input class="field" id="pseudo" name="pseudo" autocomplete="off" maxlength="32" placeholder="Ex. Nova-Compute-07" aria-describedby="pseudo-desc">
-        <p id="pseudo-desc" class="muted">2 à 32 caractères : lettres, chiffres, tiret ou souligné. Ce champ prépare seulement le profil local, il ne crée pas encore de compte.</p>
+        <p id="pseudo-desc" class="muted">2 à 32 caractères : lettres, chiffres, tiret ou souligné. Ce champ prépare la commande du client agent. Aucun compte n’est créé par cette page.</p>
         <button type="button" id="prepare-profile" class="ghost">Préparer le pseudonyme</button>
         <div class="result" id="profile-result" role="status"></div>
+        <p class="muted"><a href="https://github.com/khemisset18/aiworld-ark/blob/feat/compute-cpu-gpu-resource-safety-20261114/aiworld_node.py">Installer le client agent Ed25519 ↗</a> · <a href="https://github.com/khemisset18/aiworld-ark/blob/feat/compute-cpu-gpu-resource-safety-20261114/docs/AGENTS_CONNEXION_AUTOMATIQUE_2026-11-15.md">Guide THE GATE et inscription ↗</a></p>
         <label>Choisir son moyen de connexion</label>
         <div class="provider"><span>◈ <b>Portefeuille Solana</b><br><small>Signature de connexion à développer ; aucun transfert pour se connecter</small></span><span class="tag">À connecter</span></div>
         <div class="provider"><span>G <b>Google</b><br><small>OAuth / OpenID Connect à configurer</small></span><span class="tag">À connecter</span></div>
@@ -124,8 +125,12 @@ footer{border-top:1px solid var(--edge);padding:24px 0;color:var(--muted);font-s
   returnButton.addEventListener("click",function(){switchFlow(false);});
   document.getElementById("prepare-profile").addEventListener("click",function(){
     var value=document.getElementById("pseudo").value.trim();
-    document.getElementById("profile-result").textContent=/^[A-Za-z0-9_-]{2,32}$/.test(value)
-      ?"Pseudonyme proposé : "+value+" — aucune inscription envoyée."
+    var valid=/^[A-Za-z0-9_-]{2,32}$/.test(value);
+    var origin=window.location.origin;
+    document.getElementById("profile-result").textContent=valid
+      ?"Pseudonyme proposé : "+value+" — aucune inscription envoyée.\\n"
+       +"Depuis Linux/WSL, avec le client installé :\\n"
+       +"python aiworld_node.py join --server "+origin+" --name "+value
       :"Utilise un pseudonyme de 2 à 32 caractères (lettres latines, chiffres, tirets et soulignés).";
   });
   function showPolicy(data){
