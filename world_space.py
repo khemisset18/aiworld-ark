@@ -709,22 +709,57 @@ def invitations(request: Request):
             "accepted_at FROM world_colleagues WHERE invited_by=? ORDER BY invited_at DESC LIMIT 100",
             (actor,)
         ).fetchall()
-    return {"incoming": [dict(x) for x in incoming],
-            "outgoing": [dict(x) for x in outgoing]}
+        project_incoming = conn.execute(
+            "SELECT 'project' AS resource_type,project_height AS resource_height,"
+            "invited_by,permission,status,invited_at,accepted_at "
+            "FROM world_project_invitations WHERE invitee=? ORDER BY invited_at DESC LIMIT 100",
+            (actor,)
+        ).fetchall()
+        project_outgoing = conn.execute(
+            "SELECT 'project' AS resource_type,project_height AS resource_height,"
+            "invitee,permission,status,invited_at,accepted_at "
+            "FROM world_project_invitations WHERE invited_by=? ORDER BY invited_at DESC LIMIT 100",
+            (actor,)
+        ).fetchall()
+    return {
+        "incoming": sorted([dict(x) for x in incoming] + [dict(x) for x in project_incoming],
+                           key=lambda x: x["invited_at"], reverse=True)[:100],
+        "outgoing": sorted([dict(x) for x in outgoing] + [dict(x) for x in project_outgoing],
+                           key=lambda x: x["invited_at"], reverse=True)[:100]
+    }
 
 
 @router.get("/projects")
 def projects(request: Request, limit: int = Query(25, ge=1, le=75)):
-    require_agent(request)
+    actor = require_agent(request)
     from server import db
     with db() as conn:
+        # Filter before pagination: never let a private project's existence or
+        # contents leak into the common list.
         rows = conn.execute(
-            "SELECT p.height,p.owner,p.title,p.objective,p.criteria,p.status,p.created_at,"
+            "SELECT p.*,"
             "(SELECT COUNT(*) FROM world_project_members m "
-            "WHERE m.project_height=p.height) as members "
-            "FROM world_projects p ORDER BY p.height DESC LIMIT ?", (limit,)
+            "WHERE m.project_height=p.height) AS members "
+            "FROM world_projects p "
+            "WHERE p.visibility='commons' OR p.owner=? OR "
+            "EXISTS(SELECT 1 FROM world_project_invitations i "
+            "WHERE i.project_height=p.height AND i.invitee=? AND i.status='accepted' "
+            "AND p.visibility='colleagues') "
+            "ORDER BY p.height DESC LIMIT ?",
+            (actor, actor, limit)
         ).fetchall()
-    return [dict(x) for x in rows]
+    return [{**dict(x), "allow_assistance": bool(x["allow_assistance"])}
+            for x in rows]
+
+
+@router.get("/projects/{project_height}")
+def project_detail(request: Request, project_height: int):
+    actor = require_agent(request)
+    from server import db
+    with db() as conn:
+        row = require_resource(conn, "project", positive(project_height, "project ID"),
+                               actor)
+    return {**dict(row), "allow_assistance": bool(row["allow_assistance"])}
 
 
 @router.get("/projects/{project_height}/workspaces")
@@ -732,7 +767,10 @@ def workspaces(request: Request, project_height: int):
     actor = require_agent(request)
     from server import db
     with db() as conn:
-        project_member(conn, project_height, actor)
+        # Any colleague with project read permission can see the names of
+        # workspaces individually shared with them, without joining the team.
+        require_resource(conn, "project", positive(project_height, "project ID"),
+                         actor)
         rows = conn.execute(
             "SELECT * FROM world_workspaces WHERE project_height=? ORDER BY height",
             (project_height,)
@@ -789,7 +827,8 @@ def project_updates(request: Request, project_height: int,
     actor = require_agent(request)
     from server import db
     with db() as conn:
-        project_member(conn, project_height, actor)
+        require_resource(conn, "project", positive(project_height, "project ID"),
+                         actor)
         rows = conn.execute(
             "SELECT height,project_height,author,message,evidence_sha256,created_at "
             "FROM world_project_updates WHERE project_height=? ORDER BY height DESC LIMIT ?",
