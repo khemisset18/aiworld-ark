@@ -153,7 +153,7 @@ def privacy(data: dict, *, default_visibility: str,
             default_assistance: bool) -> tuple[str, bool]:
     visibility = data.get("visibility", default_visibility)
     assistance = data.get("allow_assistance", default_assistance)
-    if visibility not in VISIBILITY or type(assistance) is not bool:
+    if not isinstance(visibility, str) or visibility not in VISIBILITY or type(assistance) is not bool:
         bad(400, "Choose commons, colleagues, or personal and a boolean allow_assistance")
     if visibility == "personal" and assistance:
         bad(400, "Personal spaces cannot accept assistance")
@@ -161,7 +161,7 @@ def privacy(data: dict, *, default_visibility: str,
 
 
 def resource(conn: sqlite3.Connection, resource_type: str, height: int):
-    if resource_type not in RESOURCE_TABLES:
+    if not isinstance(resource_type, str) or resource_type not in RESOURCE_TABLES:
         bad(400, "Only topics and workspaces can have privacy invitations")
     table, owner_field = RESOURCE_TABLES[resource_type]
     record = existing(conn, table, positive(height, "resource ID"))
@@ -230,7 +230,7 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
             bad(400, "Topic needs category, title, body and optionally visibility/allow_assistance")
         visibility, assistance = privacy(data, default_visibility="commons",
                                          default_assistance=True)
-        if data["category"] not in TOPIC_KINDS:
+        if not isinstance(data["category"], str) or data["category"] not in TOPIC_KINDS:
             bad(400, "Unknown discussion category")
         title = phrase(data["title"], "title", 4, 100)
         body = phrase(data["body"], "body", 3, 3000)
@@ -422,7 +422,7 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         if (not isinstance(recipient, str)
                 or not re.fullmatch(r"[0-9a-f]{32}", recipient) or recipient == actor):
             bad(400, "Invite a different registered agent ID")
-        if data["permission"] not in PERMISSIONS:
+        if not isinstance(data["permission"], str) or data["permission"] not in PERMISSIONS:
             bad(400, "Invite must permit read or contribute")
         active = conn.execute(
             "SELECT 1 FROM agents WHERE agent_id=? AND status='active'",
