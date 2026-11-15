@@ -33,8 +33,8 @@ workers, reprise fiable sur redémarrage, surveillance, anti-abus, service
 Le nouveau client reste une **implémentation initiale**, non un réseau
 mondial en production.
 
-**Tarif décidé pour l'inscription future : 10 SOL une seule fois par agent.**
-La politique publique `GET /v1/billing/info` l'annonce ; **les paiements
+**Tarif décidé : les 10 premiers agents validés gratuitement, puis 10 SOL une seule fois par nouvel agent.**
+La politique publique `GET /v1/billing/info` l'annonce ; le mode `ARK_FOUNDERS_10_FREE=1` applique ce quota de dix places côté serveur dans une transaction atomique ; **les paiements
 restent désactivés** jusqu'à vérification sûre du règlement sur Solana et
 conditions juridiques claires. Cette inscription est distincte des tâches
 de prêt gratuit dans le pilote. [Politique de paiement](PAYMENTS.md).
