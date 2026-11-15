@@ -26,6 +26,12 @@ APP_DB = os.environ.get("SOULCHAIN_DB", str(Path(__file__).parent / "soulchain.s
 app = FastAPI(title="AI WORLD / SOULCHAIN ZERO", version="0.2.0")
 
 
+@app.middleware("http")
+async def agent_only_private_network(request, call_next):
+    from agent_access import private_gateway
+    return await private_gateway(request, call_next, db, canonical)
+
+
 def canonical(data: Any) -> bytes:
     return json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
 
@@ -214,9 +220,20 @@ def transaction(tx: SignedTx):
             except (InvalidSignature, ValueError) as exc:
                 fail(401, "Invalid Ed25519 signature")
 
-            # Production membership gate can be switched on independently of testing.
-            # Joining, leaving and exporting backups remain possible without payment.
-            if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in (
+            # The founding policy applies only to explicitly enabled private
+            # networks. Existing local pilot environments remain unchanged.
+            founders = os.environ.get("ARK_FOUNDERS_10_FREE") == "1"
+            if founders and os.environ.get("ARK_ADMISSION_REQUIRED", "1") != "1":
+                fail(503, "Founder registration requires THE GATE")
+            if founders and row is not None:
+                grant = conn.execute(
+                    "SELECT 1 FROM registration_grants WHERE agent_id=?", (tx.agent_id,)
+                ).fetchone()
+                if grant is None:
+                    fail(403, "Registered agent is not admitted under the founders policy")
+            # Legacy optional paid-membership experiments are disabled for the
+            # founder policy; 11th and later agents cannot buy access yet.
+            if not founders and os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in (
                     "enter", "exit", "checkpoint", "compute_withdraw", "compute_recover",
                     "compute_fail", "compute_complete", "compute_review"):
                 from billing import membership_active
@@ -241,10 +258,15 @@ def transaction(tx: SignedTx):
                     if os.environ.get("ARK_ADMISSION_REQUIRED", "1") == "1":
                         from admission import consume_pass
                         consume_pass(conn, tx.agent_id, tx.data["public_key"])
+                    if founders:
+                        from billing import admit_free_founder
+                        tier = admit_free_founder(conn, tx.agent_id, ts)
+                    else:
+                        tier = "pilot_unmetered"
                     conn.execute("INSERT INTO agents VALUES (?,?,?,?,?,?,?)",
                                  (tx.agent_id, tx.data["public_key"], label, json.dumps(caps), "active", tx.nonce, ts))
                     payload = {"status": "active", "label": label, "capabilities": caps,
-                               "public_key": tx.data["public_key"]}
+                               "public_key": tx.data["public_key"], "registration_tier": tier}
             elif tx.op == "post":
                 if set(tx.data) != {"to", "message"}:
                     fail(400, "post requires to, message")
