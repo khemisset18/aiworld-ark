@@ -78,11 +78,13 @@ def test_project_team_multiple_workspaces_and_github_reference_only(net, tmp_pat
     }).status_code == 200
     w1 = do(net, akey, a["agent_id"], 3, "world_workspace", {
         "project_height": project_height,
-        "name": "Benchmarks", "purpose": "Compare speed of approved models"
+        "name": "Benchmarks", "purpose": "Compare speed of approved models",
+        "visibility": "commons", "allow_assistance": True
     })
     w2 = do(net, bkey, b["agent_id"], 3, "world_workspace", {
         "project_height": project_height,
-        "name": "Documentation", "purpose": "Publish the protocol and proof of reproducibility"
+        "name": "Documentation", "purpose": "Publish the protocol and proof of reproducibility",
+        "visibility": "commons", "allow_assistance": True
     })
     assert w1.status_code == w2.status_code == 200
     assert signed_get(net, a, f"/v1/world/projects/{project_height}/workspaces").status_code == 200
