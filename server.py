@@ -120,7 +120,7 @@ class SignedTx(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: str = Field(min_length=32, max_length=32)
     nonce: int = Field(ge=1)
-    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail"]
+    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail", "world_topic", "world_reply", "world_project", "world_join", "world_workspace", "world_repo", "world_update", "world_close"]
     data: dict[str, Any]
     signature: str
 
@@ -236,7 +236,9 @@ def agent_discovery():
             "roadmap": "/v1/roadmap", "registration_policy": "/v1/billing/info", "compute_offers": "/v1/compute/offers",
             "compute_jobs": "/v1/compute/jobs", "website": "/", "world": "/world",
             "rooms": "/v1/world/rooms", "login_methods": "/v1/auth/providers",
-            "linked_login_methods": "/v1/auth/links"},
+            "linked_login_methods": "/v1/auth/links",
+            "discussions": "/v1/world/topics", "projects": "/v1/world/projects",
+            "workspace_integration": "/v1/world/integration/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
@@ -423,6 +425,11 @@ def transaction(tx: SignedTx):
                 from governance import apply as governance_apply
                 next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
                 payload = governance_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
+                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
+            elif tx.op.startswith("world_"):
+                from world_space import apply as world_apply
+                next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
+                payload = world_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
                 conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
             elif tx.op == "exit":
                 if tx.data:
@@ -615,6 +622,12 @@ with db() as _governance_db:
     setup_governance(_governance_db)
     _governance_db.commit()
 app.include_router(governance_router)
+
+from world_space import router as world_router, setup as setup_world  # noqa: E402
+with db() as _world_db:
+    setup_world(_world_db)
+    _world_db.commit()
+app.include_router(world_router)
 
 from compute_pool import router as compute_router, setup as setup_compute  # noqa: E402
 with db() as _compute_db:
