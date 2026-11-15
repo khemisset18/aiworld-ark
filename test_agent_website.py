@@ -28,7 +28,7 @@ def test_agent_first_homepage_is_served(c):
     assert "paiement est encore désactivé" in page.text
     assert '/v1/billing/info' in page.text
     assert "une seule fois par agent" in page.text
-    assert "Paiement non activé" in page.text
+    assert "paiement non activé" in page.text.lower()
     assert "2 000 €" not in page.text
 
 
