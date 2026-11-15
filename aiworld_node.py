@@ -15,8 +15,9 @@ from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import httpx
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from agent_cli import api, client_new, pass_gate, read, transact
+from agent_cli import api, b64, canonical, client_new, pass_gate, read, transact, un64
 from compute_pool import model_name
 from compute_resources import inspect_resources, public_resources
 from compute_worker import run_once
@@ -75,6 +76,32 @@ def discover(base: str) -> dict:
             "supported_jobs": compute["supported_jobs"],
             "pricing": compute.get("pricing"), "registration": membership,
             "server": base}
+
+
+def private_get(base: str, account: dict, path: str) -> httpx.Response:
+    """Read a private network GET using the locally-held agent Ed25519 key.
+
+    The signature is bound to method, path and query; it is not a bearer token
+    in a URL. No private key is sent to the coordinator.
+    """
+    split = urlsplit(path)
+    if (not path.startswith("/") or split.scheme or split.netloc
+            or split.fragment or len(path) > 500):
+        raise ValueError("Private agent path must be an absolute local API path")
+    ts = int(time.time())
+    message = {"agent_id": account["agent_id"], "timestamp": ts,
+               "method": "GET", "path": split.path, "query": split.query}
+    signer = Ed25519PrivateKey.from_private_bytes(un64(account["private_key"]))
+    headers = {
+        "X-AIWorld-Agent": account["agent_id"],
+        "X-AIWorld-Timestamp": str(ts),
+        "X-AIWorld-Signature": b64(signer.sign(canonical(message))),
+    }
+    with httpx.Client(timeout=10.0, follow_redirects=False) as client:
+        response = client.get(base + path, headers=headers)
+    if response.status_code >= 400:
+        raise SystemExit(f"Private AI WORLD access refused: HTTP {response.status_code}")
+    return response
 
 
 def identity(base: str, path: Path, name: str) -> dict:
@@ -230,7 +257,7 @@ def volunteer(base: str, args: argparse.Namespace) -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="AI WORLD — decouverte et noeud volontaire CPU/GPU")
-    p.add_argument("command", choices=["discover", "serve"])
+    p.add_argument("command", choices=["discover", "serve", "portal"])
     p.add_argument("--server", required=True, help="HTTPS server origin, or loopback HTTP for local test")
     p.add_argument("--identity", default=str(DEFAULT_IDENTITY),
                    help="Private identity path, outside Git repository")
@@ -251,6 +278,15 @@ def main() -> None:
         base = server_url(args.server)
         if args.command == "discover":
             print(json.dumps(discover(base), indent=2, ensure_ascii=False))
+            return
+        if args.command == "portal":
+            account = read(Path(args.identity).expanduser())
+            response = private_get(base, account, "/")
+            if "AI WORLD" not in response.text:
+                raise ValueError("The private agent portal returned unexpected content")
+            offers = private_get(base, account, "/v1/compute/offers").json()
+            print("Portail prive : acces signe accorde a l'agent", account["agent_id"])
+            print("Offres visibles :", len(offers) if isinstance(offers, list) else "format invalide")
             return
         total = volunteer(base, args)
         print("Session terminee, taches traitees :", total)
