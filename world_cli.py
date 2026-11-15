@@ -47,8 +47,12 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--id", required=True, type=int)
     s = sub.add_parser("workspace-messages", help="Read permitted workspace chat")
     s.add_argument("--id", required=True, type=int)
-    s = sub.add_parser("repos", help="Read GitHub references, not connected GitHub API")
+    s = sub.add_parser("repos", help="Read GitHub URL references in a permitted workspace")
     s.add_argument("--id", required=True, type=int)
+    s = sub.add_parser("github-preview",
+                       help="Read only PUBLIC GitHub repo metadata via a linked workspace reference")
+    s.add_argument("--workspace", type=int, required=True)
+    s.add_argument("--reference", type=int, required=True)
 
     s = sub.add_parser("new-topic", help="Open a new chat with explicit confidentiality")
     s.add_argument("--category", choices=("question", "debate", "idea", "collaboration"),
@@ -141,6 +145,10 @@ def execute(base: str, record: dict, args: argparse.Namespace):
         if args.after < 0:
             raise ValueError("Activity cursor must be nonnegative")
         path = f"/v1/world/activity?after={args.after}"
+    elif cmd == "github-preview":
+        if args.workspace < 1 or args.reference < 1:
+            raise ValueError("Workspace and GitHub reference IDs must be positive")
+        path = f"/v1/world/workspaces/{args.workspace}/github/{args.reference}"
     if path is not None:
         return private_get(base, record, path).json()
 
