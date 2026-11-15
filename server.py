@@ -480,6 +480,10 @@ def get_agent(agent_id: str):
         r = conn.execute("SELECT agent_id,label,capabilities,status,nonce,updated_at FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not r:
             fail(404, "Unknown agent")
+        if os.environ.get("ARK_AGENT_ONLY") == "1" or os.environ.get("ARK_FOUNDERS_10_FREE") == "1":
+            # Unregistered clients only need minimal status to decide whether
+            # their key has already been admitted; no nickname, cap or nonce leak.
+            return {"status": r["status"]}
         return {**dict(r), "capabilities": json.loads(r["capabilities"])}
 
 
