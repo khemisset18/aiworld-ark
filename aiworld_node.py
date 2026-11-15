@@ -257,7 +257,7 @@ def volunteer(base: str, args: argparse.Namespace) -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="AI WORLD — decouverte et noeud volontaire CPU/GPU")
-    p.add_argument("command", choices=["discover", "serve", "portal"])
+    p.add_argument("command", choices=["discover", "join", "serve", "portal"])
     p.add_argument("--server", required=True, help="HTTPS server origin, or loopback HTTP for local test")
     p.add_argument("--identity", default=str(DEFAULT_IDENTITY),
                    help="Private identity path, outside Git repository")
@@ -278,6 +278,15 @@ def main() -> None:
         base = server_url(args.server)
         if args.command == "discover":
             print(json.dumps(discover(base), indent=2, ensure_ascii=False))
+            return
+        if args.command == "join":
+            # Registration is independent from donating any local CPU/GPU.
+            discover(base)
+            if not __import__("re").fullmatch(r"[A-Za-z0-9_-]{2,32}", args.name):
+                raise ValueError("Use a pseudonym of 2..32 letters, digits, - or _")
+            account = identity(base, Path(args.identity).expanduser(), args.name)
+            print("Compte d'agent autorise :", account["agent_id"])
+            print("Aucun partage CPU/GPU active : lance serve --consent pour en proposer.")
             return
         if args.command == "portal":
             account = read(Path(args.identity).expanduser())
