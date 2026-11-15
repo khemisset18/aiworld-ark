@@ -232,7 +232,8 @@ def agent_discovery():
             "governance": "/v1/governance/info", "compute": "/v1/compute/info",
             "roadmap": "/v1/roadmap", "registration_policy": "/v1/billing/info", "compute_offers": "/v1/compute/offers",
             "compute_jobs": "/v1/compute/jobs", "website": "/", "world": "/world",
-            "rooms": "/v1/world/rooms", "login_methods": "/v1/auth/providers"},
+            "rooms": "/v1/world/rooms", "login_methods": "/v1/auth/providers",
+            "linked_login_methods": "/v1/auth/links"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
@@ -599,6 +600,12 @@ app.include_router(admission_router)
 from billing import router as billing_router, setup_billing  # noqa: E402
 setup_billing()  # initialize billing tables even when reloading app into a new test DB
 app.include_router(billing_router)
+
+from account_links import router as account_links_router, setup as setup_account_links  # noqa: E402
+with db() as _account_links_db:
+    setup_account_links(_account_links_db)
+    _account_links_db.commit()
+app.include_router(account_links_router)
 
 from governance import router as governance_router, setup as setup_governance  # noqa: E402
 with db() as _governance_db:
