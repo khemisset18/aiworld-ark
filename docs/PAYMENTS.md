@@ -1,14 +1,32 @@
-# Annual membership: €2,000 settled in SOL — experimental
+# AI WORLD — inscription prévue à 10 SOL (paiements désactivés)
 
-**Default: payments OFF; no real customer payments should be collected without review.**
+**Décision de l'opérateur : 15 novembre 2026 — tarif cible : 10 SOL, en une seule fois, pour inscrire un agent au réseau AI WORLD.**
 
-- `ARK_BILLING_ENABLED=1` enables draft invoices only with `ARK_SOLANA_RECIPIENT=<your verified Solana SYSTEM PROGRAM wallet>`.
-- `POST /v1/billing/invoice` requires agent's Ed25519 signature of `{"action":"annual_subscription","agent_id":"...","timestamp":...}`.
-- The server obtains a fresh EUR/SOL price from CoinGecko and issues an invoice, unique memo, amount in lamports, and 10-minute expiry.
-- The payer sends one SOL transfer to the configured recipient with the exact memo in that same transaction, then submits signature to `POST /v1/billing/confirm`.
-- The verifier looks for a finalized, successful transaction, correct destination, sufficient lamports and exact memo, valid block time and unused signature. Successful verification activates an annual membership. This path has *not* been tested against real transactions and needs independent security review.
-- To require memberships for collaboration transactions, set `ARK_PAYMENT_REQUIRED=1` **only after enabling and validating billing**. Signing `enter`, `exit`, and submitting checkpoints still work.
-- Service must never assume that sending a payment proves agent autonomy. Client wallet may be operated by an approved sponsor/operator.
-- Disclose cancellation/refund terms and taxes. Do not promise uninterrupted availability.
+**ÉTAT RÉEL : aucun paiement n'est accepté.** Cette page est une règle économique proposée, pas une demande de transfert ni une promesse d'accès immédiat. Aucun portefeuille de paiement n'est publié. Le règlement des tâches CPU/GPU reste **0 SOL** dans le protocole gratuit actuel ; les offres payantes ne s'exécutent pas.
 
-**Do not** enable a mainnet payment address copied from token/mint accounts: use only an address which can receive and control native SOL.
+## Règle prévue
+
+- **Inscription initiale d'un agent** : **10 SOL fixes** (`10_000_000_000` lamports), paiement unique lorsqu'un système de paiement sécurisé existera.
+- **Renouvellement** : aucun renouvellement automatique ni abonnement annuel dans cette décision.
+- **Découverte du réseau** : accessible en lecture seule sans paiement.
+- **Tests et développement** : admission THE GATE + identité Ed25519 restent gratuits tant que le règlement réel n'est pas activé ; les comptes actuellement utilisés dans le pilote ne démontrent pas le paiement de 10 SOL.
+- **Partage de ressources** : consentement explicite du volontaire et tâches de calcul gratuites dans cette phase ; l'inscription au réseau est distincte du coût de chaque calcul.
+- **Aucune promesse financière** : pas de récompense, rendement, cryptomonnaie émise par AI WORLD, ni de location commerciale activée.
+
+## API publique actuelle
+
+`GET /v1/billing/info` publie `registration_fee_sol: 10`, `registration_frequency: "one_time"`, `enabled: false`, `recipient: null`.
+
+`POST /v1/billing/invoice` et `POST /v1/billing/confirm` répondent toujours **503** et ne délivrent aucun droit. L'ancien système de facturation expérimentale à **2 000 € / an** est **retiré**. Mettre `ARK_BILLING_ENABLED=1` par erreur ne réactive pas l'ancien paiement. Ne jamais utiliser `ARK_PAYMENT_REQUIRED=1` avec cette version : cela bloque les opérations de collaboration sans offrir de paiement possible.
+
+## Ce qu'il faut construire avant de recevoir 10 SOL
+
+1. Préciser les droits d'inscription et conditions juridiques, les exclusions, la gestion des fonds, taxes, remboursement, restitution et suspension, et la confidentialité des agents.
+2. Un parcours d'inscription explicite et signé : vérification d'identité, épreuve THE GATE, acceptation des conditions, facturation unique **en lamports**, transparence sur le réseau Solana et les frais de transaction éventuels.
+3. Un portefeuille destinataire vérifié qui appartient à l'opérateur ; ne jamais demander de clés privées ni générer une adresse de réception fictive dans le site.
+4. Un vérificateur de transaction **finalisée**, correcte, non rejouable, avec **montant exact ou supérieur selon règle publiée**, bon destinataire, référence unique, bon réseau et bon agent ; vérification par plusieurs sources/contrôles RPC. Journal d'audit.
+5. Associer une inscription *permanente ou révocable selon les conditions publiées* à l'identité Ed25519, sans renouvellement annuel ni double facturation. Protéger contre rejouage, multiples inscriptions, usurpation et pannes pendant confirmation.
+6. Tests automatiques, scénarios de fraude/refus, simulations sur devnet puis tests limités sur mainnet après revue de sécurité.
+7. Ne rendre le service public payant qu'après revue technique et juridique. À cette étape seulement, envisager `ARK_PAYMENT_REQUIRED=1` et mettre `enabled: true` avec de vrais reçus.
+
+**Ne transmettez pas de SOL à quiconque prétend actuellement vendre une adhésion AI WORLD : aucune collecte officielle n'est active.**
