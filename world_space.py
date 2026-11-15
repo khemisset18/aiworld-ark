@@ -390,6 +390,128 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         return {"project_height": project_id, "update_sha256": digest_text(message),
                 "evidence_sha256": evidence, "verification": "agent_claim_only"}
 
+    if op == "world_workspace_message":
+        exact(data, {"workspace_height", "message"})
+        ws_id = positive(data["workspace_height"], "workspace ID")
+        ws = require_resource(conn, "workspace", ws_id, actor, contribute=True)
+        project = existing(conn, "world_projects", ws["project_height"])
+        if project["status"] != "open":
+            bad(409, "Project closed")
+        message = phrase(data["message"], "workspace message", 1, 2400)
+        recent = conn.execute(
+            "SELECT COUNT(*) FROM world_workspace_messages WHERE author=? AND created_at>?",
+            (actor, now - 3600)
+        ).fetchone()[0]
+        if recent >= 100:
+            bad(429, "Workspace message rate limit")
+        conn.execute(
+            "INSERT INTO world_workspace_messages VALUES(?,?,?,?,?)",
+            (height, ws_id, actor, message, now)
+        )
+        return {"workspace_height": ws_id, "message_sha256": digest_text(message)}
+
+    if op == "world_invite":
+        exact(data, {"resource_type", "resource_height", "invitee", "permission"})
+        kind, resource_id = data["resource_type"], positive(data["resource_height"], "resource ID")
+        record, owner = resource(conn, kind, resource_id)
+        if actor != owner:
+            bad(403, "Only the creator can invite colleagues")
+        if record["visibility"] == "personal":
+            bad(409, "Change visibility to colleagues or commons before inviting")
+        recipient = data["invitee"]
+        if (not isinstance(recipient, str)
+                or not re.fullmatch(r"[0-9a-f]{32}", recipient) or recipient == actor):
+            bad(400, "Invite a different registered agent ID")
+        if data["permission"] not in PERMISSIONS:
+            bad(400, "Invite must permit read or contribute")
+        active = conn.execute(
+            "SELECT 1 FROM agents WHERE agent_id=? AND status='active'",
+            (recipient,)
+        ).fetchone()
+        if active is None:
+            bad(404, "Invited colleague is not an active agent")
+        existing_invite = conn.execute(
+            "SELECT status FROM world_colleagues WHERE "
+            "resource_type=? AND resource_height=? AND invitee=?",
+            (kind, resource_id, recipient)
+        ).fetchone()
+        if existing_invite is not None and existing_invite["status"] == "accepted":
+            bad(409, "Revoke the existing accepted access before sending a new invitation")
+        conn.execute(
+            "INSERT INTO world_colleagues"
+            "(resource_type,resource_height,invitee,permission,status,invited_by,invited_at,accepted_at)"
+            " VALUES(?,?,?,?,'pending',?,?,NULL)"
+            " ON CONFLICT(resource_type,resource_height,invitee) DO UPDATE SET"
+            " permission=excluded.permission,status='pending',invited_by=excluded.invited_by,"
+            " invited_at=excluded.invited_at,accepted_at=NULL",
+            (kind, resource_id, recipient, data["permission"], actor, now)
+        )
+        return {"resource_type": kind, "resource_height": resource_id,
+                "invitee_sha256": digest_text(recipient), "status": "pending"}
+
+    if op == "world_accept":
+        exact(data, {"resource_type", "resource_height"})
+        kind, resource_id = data["resource_type"], positive(data["resource_height"], "resource ID")
+        record, _owner = resource(conn, kind, resource_id)
+        if record["visibility"] == "personal":
+            bad(403, "This resource is currently personal")
+        invitation = conn.execute(
+            "SELECT status,permission FROM world_colleagues WHERE "
+            "resource_type=? AND resource_height=? AND invitee=?",
+            (kind, resource_id, actor)
+        ).fetchone()
+        if invitation is None or invitation["status"] != "pending":
+            bad(403, "No outstanding invitation for this agent")
+        conn.execute(
+            "UPDATE world_colleagues SET status='accepted',accepted_at=? "
+            "WHERE resource_type=? AND resource_height=? AND invitee=?",
+            (now, kind, resource_id, actor)
+        )
+        return {"resource_type": kind, "resource_height": resource_id,
+                "status": "accepted", "permission": invitation["permission"]}
+
+    if op == "world_revoke":
+        exact(data, {"resource_type", "resource_height", "invitee"})
+        kind, resource_id = data["resource_type"], positive(data["resource_height"], "resource ID")
+        _record, owner = resource(conn, kind, resource_id)
+        invitee = data["invitee"]
+        if not isinstance(invitee, str) or not re.fullmatch(r"[0-9a-f]{32}", invitee):
+            bad(400, "Invalid colleague ID")
+        if actor not in (owner, invitee):
+            bad(403, "Only creator or colleague can revoke this access")
+        removed = conn.execute(
+            "DELETE FROM world_colleagues "
+            "WHERE resource_type=? AND resource_height=? AND invitee=?",
+            (kind, resource_id, invitee)
+        )
+        if removed.rowcount != 1:
+            bad(404, "Invitation or access not found")
+        return {"resource_type": kind, "resource_height": resource_id,
+                "invitee_sha256": digest_text(invitee), "status": "revoked"}
+
+    if op == "world_visibility":
+        exact(data, {"resource_type", "resource_height",
+                     "visibility", "allow_assistance"})
+        kind, resource_id = data["resource_type"], positive(data["resource_height"], "resource ID")
+        record, owner = resource(conn, kind, resource_id)
+        if actor != owner:
+            bad(403, "Only creator can change privacy")
+        visibility, assistance = privacy(data, default_visibility=record["visibility"],
+                                         default_assistance=bool(record["allow_assistance"]))
+        table = RESOURCE_TABLES[kind][0]
+        conn.execute(
+            f"UPDATE {table} SET visibility=?,allow_assistance=? WHERE height=?",
+            (visibility, int(assistance), resource_id)
+        )
+        if visibility == "personal":
+            # Do not silently reactivate old permissions if owner later reopens.
+            conn.execute(
+                "DELETE FROM world_colleagues WHERE resource_type=? AND resource_height=?",
+                (kind, resource_id)
+            )
+        return {"resource_type": kind, "resource_height": resource_id,
+                "visibility": visibility, "allow_assistance": assistance}
+
     if op == "world_close":
         exact(data, {"project_height"})
         project_id = positive(data["project_height"], "project ID")
