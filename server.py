@@ -157,6 +157,9 @@ def auth_providers():
     return {
         "pseudonym_only": True,
         "canonical_identity": "Ed25519 local signing key",
+        "account_model": "one agent_id, many independently verified login aliases",
+        "one_account_per_agent": True,
+        "linked_methods_endpoint": "/v1/auth/links",
         "gate_required_for_new_agents": True,
         "supported": {
             "agent_ed25519": {"enabled": True, "method": "signed API"},
