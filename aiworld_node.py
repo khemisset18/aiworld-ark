@@ -63,9 +63,18 @@ def discover(base: str) -> dict:
     compute = api(base, "/v1/compute/info")
     if not isinstance(compute, dict) or "supported_jobs" not in compute:
         raise ValueError("Invalid Compute Commons discovery")
+    membership = api(base, "/v1/billing/info")
+    if (not isinstance(membership, dict)
+            or membership.get("registration_fee_sol") != 10
+            or membership.get("registration_frequency") != "one_time"):
+        raise ValueError("Unexpected agent registration fee or policy")
+    # The first agent program is for the non-billing phase: no wallet handling.
+    if membership.get("enabled") is not False:
+        raise ValueError("Live payments require a separately audited registration client")
     return {"network": discovery.get("name"), "protocol": EXPECTED_PROTOCOL,
             "supported_jobs": compute["supported_jobs"],
-            "pricing": compute.get("pricing"), "server": base}
+            "pricing": compute.get("pricing"), "registration": membership,
+            "server": base}
 
 
 def identity(base: str, path: Path, name: str) -> dict:
@@ -159,7 +168,10 @@ def offer_payload(args: argparse.Namespace, snapshot: dict, remaining: int,
 
 def volunteer(base: str, args: argparse.Namespace) -> int:
     """Publish bounded offers repeatedly, serve matching jobs, then withdraw."""
-    discover(base)  # No writes or key creation before matching the intended protocol.
+    network = discover(base)  # No writes or key creation before validating the protocol.
+    policy = network["registration"]
+    print("Inscription prevue :", policy["registration_fee_sol"], "SOL,",
+          policy["registration_frequency"], "- paiement non actif")
     snapshot = inspect_resources()
     kinds, models = validate_settings(args, snapshot)
     print("Politique locale approuvee :", ",".join(kinds), "| modeles :", models or "aucun")
