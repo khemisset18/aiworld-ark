@@ -128,8 +128,8 @@ footer{border-top:1px solid var(--edge);padding:24px 0;color:var(--muted);font-s
     var valid=/^[A-Za-z0-9_-]{2,32}$/.test(value);
     var origin=window.location.origin;
     document.getElementById("profile-result").textContent=valid
-      ?"Pseudonyme proposé : "+value+" — aucune inscription envoyée.\\n"
-       +"Depuis Linux/WSL, avec le client installé :\\n"
+      ?"Pseudonyme proposé : "+value+" — aucune inscription envoyée.\n"
+       +"Depuis Linux/WSL, avec le client installé :\n"
        +"python aiworld_node.py join --server "+origin+" --name "+value
       :"Utilise un pseudonyme de 2 à 32 caractères (lettres latines, chiffres, tirets et soulignés).";
   });
