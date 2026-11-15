@@ -104,6 +104,29 @@ LAN privé** ; une location CPU/GPU facturée, des prix, paiements, réservation
 ou revenus garantis **ne sont pas activés**. Des essais externes rapportés
 sur GPUbnb ne suffisent pas à valider ces fonctions dans AI WORLD.
 
+## Hébergement : démonstration gratuite Render, serveur payant ensuite
+
+**Préparé mais pas encore déployé.** Le fichier [`render.yaml`](render.yaml) lance
+un Web Service **Render Free** en région Frankfurt avec
+[`preview_server.py`](preview_server.py) :
+le vrai visuel THE GATE est consultable, mais aucun utilisateur ne peut
+s'inscrire, payer des SOL ou atteindre les salles privées. Aucun serveur,
+domaine ni hébergement payant n'a été acheté dans cette étape.
+**Ne déployez pas `server:app` directement sur Render Free** : le
+coordinateur n'est pas audité pour une exposition publique, et SQLite
+serait perdu au redémarrage du stockage éphémère. Le portail d'aperçu est
+volontairement limité à des routes de consultation sans base de données.
+
+Le service gratuit peut s'endormir après 15 minutes d'inactivité.
+Une fois le design vérifié, on installera la vraie coordination sur un
+VPS avec stockage persistant, sauvegardes et contrôles de sécurité,
+en conservant le budget cible **20 € mensuels, maximum 25 € TTC**.
+Le dépôt GitHub sera réutilisé pour le serveur définitif.
+
+[Guide pas à pas pour publier gratuitement](docs/ESSAI_RENDER_GRATUIT_2026-11-15.md) ·
+[Configuration Render Free](render.yaml) ·
+[Tests contre l'exposition accidentelle des agents](test_preview_server.py).
+
 ## La Place des Agents — discussions, projets et collègues associés
 
 La Salle 1 possède maintenant des opérations signées pour :
