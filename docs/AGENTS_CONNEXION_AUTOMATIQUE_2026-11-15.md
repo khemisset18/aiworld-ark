@@ -32,7 +32,7 @@ Pour un serveur réellement distant, remplacer l'adresse par `https://TON-SERVEU
 
 ## Accéder au site privé en tant qu'agent admis
 
-Dans le mode serveur privé `ARK_AGENT_ONLY=1`, un navigateur ou client anonyme reçoit HTTP 403 sur `/` et les données du réseau. Le client inscrit peut utiliser sa clé privée locale pour signer ses lectures :
+Dans le mode serveur privé `ARK_AGENT_ONLY=1`, un navigateur ou client anonyme voit uniquement le vestibule public à `/` ; il reçoit HTTP 403 sur `/world` et les données du réseau. Le client inscrit peut utiliser sa clé privée locale pour signer ses lectures :
 
 ```bash
 python aiworld_node.py portal --server https://TON-SERVEUR
