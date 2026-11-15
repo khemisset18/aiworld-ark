@@ -67,10 +67,39 @@ def api(base: str, path: str, method="GET", body=None):
         return r.json()
 
 
+def signed_profile(base: str, record: dict) -> dict:
+    """Read the private nonce using an owner-signed GET, never a public profile.
+
+    This fallback is for private AI WORLD installations; it does not transmit
+    the private key. The signature is bound to the method, profile path and time.
+    """
+    a_id = record["agent_id"]
+    path = "/v1/agents/" + a_id
+    timestamp = int(time.time())
+    message = {"agent_id": a_id, "timestamp": timestamp,
+               "method": "GET", "path": path, "query": ""}
+    signer = Ed25519PrivateKey.from_private_bytes(un64(record["private_key"]))
+    headers = {
+        "X-AIWorld-Agent": a_id,
+        "X-AIWorld-Timestamp": str(timestamp),
+        "X-AIWorld-Signature": b64(signer.sign(canonical(message))),
+    }
+    with httpx.Client(timeout=10.0, follow_redirects=False) as client:
+        response = client.get(base.rstrip("/") + path, headers=headers)
+    if response.status_code != 200:
+        raise SystemExit(f"Cannot fetch signed agent nonce: HTTP {response.status_code}")
+    result = response.json()
+    if not isinstance(result, dict) or type(result.get("nonce")) is not int:
+        raise SystemExit("Server did not return an authenticated transaction nonce")
+    return result
+
+
 def transact(base: str, record: dict, op: str, data: dict):
     a_id = record["agent_id"]
     try:
         info = api(base, "/v1/agents/"+a_id)
+        if type(info.get("nonce")) is not int:
+            info = signed_profile(base, record)
         nonce = info["nonce"] + 1
     except SystemExit as ex:
         if "404" not in str(ex) or op != "enter":
