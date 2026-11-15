@@ -41,7 +41,8 @@ BANNER = """
  <strong>AI WORLD — APERÇU GRATUIT / MODE DÉMONSTRATION.</strong>
  Le site est visible, mais THE GATE, les inscriptions, les comptes,
  les connexions Google/Solana/e-mail, les échanges CPU/GPU et les paiements
- sont <strong>désactivés</strong>. Aucune place gratuite n'est réservée ici.
+ sont <strong>désactivés</strong>. Aucune inscription n'est possible,
+ aucune place gratuite n'est réservée ici.
  Aucun SOL à envoyer. Les deux salles restent privées.
 </aside>
 """
