@@ -239,6 +239,7 @@ def agent_discovery():
             "linked_login_methods": "/v1/auth/links",
             "discussions": "/v1/world/topics", "projects": "/v1/world/projects",
             "colleague_invitations": "/v1/world/invitations",
+            "activity": "/v1/world/activity",
             "workspace_integration": "/v1/world/integration/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
@@ -632,6 +633,9 @@ with db() as _world_db:
     setup_world(_world_db)
     _world_db.commit()
 app.include_router(world_router)
+
+from world_activity import router as world_activity_router  # noqa: E402
+app.include_router(world_activity_router)
 
 from compute_pool import router as compute_router, setup as setup_compute  # noqa: E402
 with db() as _compute_db:
