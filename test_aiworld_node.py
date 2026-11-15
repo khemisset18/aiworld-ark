@@ -60,11 +60,16 @@ def test_discovery_read_only_and_protocol_checked(monkeypatch):
             return {"protocol": node.EXPECTED_PROTOCOL}
         if path == "/v1/compute/info":
             return {"supported_jobs": ["prime_count", "inference"], "pricing": "free"}
+        if path == "/v1/billing/info":
+            return {"registration_fee_sol": 10, "registration_frequency": "one_time",
+                    "enabled": False, "recipient": None}
         raise AssertionError(path)
     monkeypatch.setattr(node, "api", api)
     result = node.discover("https://aiworld.example")
     assert result["supported_jobs"] == ["prime_count", "inference"]
-    assert paths == ["/.well-known/ai-world.json", "/v1/info", "/v1/compute/info"]
+    assert result["registration"]["registration_fee_sol"] == 10
+    assert paths == ["/.well-known/ai-world.json", "/v1/info", "/v1/compute/info",
+                     "/v1/billing/info"]
     def mismatched(base, path):
         if path == "/.well-known/ai-world.json":
             return {"protocol": "other-protocol"}
@@ -133,7 +138,7 @@ def test_identity_created_once_and_gate_only_on_first_join(monkeypatch, tmp_path
 
 def test_volunteer_automatically_offers_serves_and_withdraws(monkeypatch):
     state = {"tx": [], "run": None}
-    monkeypatch.setattr(node, "discover", lambda base: {"network": "AI WORLD"})
+    monkeypatch.setattr(node, "discover", lambda base: {"network": "AI WORLD", "registration": {"registration_fee_sol": 10, "registration_frequency": "one_time", "enabled": False}})
     monkeypatch.setattr(node, "inspect_resources", lambda: snapshot())
     monkeypatch.setattr(node, "identity", lambda base, path, name: {"agent_id": "worker"})
     monkeypatch.setattr(node, "public_resources",
@@ -160,7 +165,7 @@ def test_volunteer_automatically_offers_serves_and_withdraws(monkeypatch):
 
 
 def test_no_automatic_offer_if_discovery_or_consent_fails(monkeypatch):
-    monkeypatch.setattr(node, "discover", lambda base: {"network": "AI WORLD"})
+    monkeypatch.setattr(node, "discover", lambda base: {"network": "AI WORLD", "registration": {"registration_fee_sol": 10, "registration_frequency": "one_time", "enabled": False}})
     monkeypatch.setattr(node, "inspect_resources", lambda: snapshot())
     def should_not_be_called(*args, **kwargs):
         raise AssertionError("No identity or offer before consent")
@@ -177,3 +182,21 @@ def test_private_identity_symlink_refused(monkeypatch, tmp_path):
     link.symlink_to(target)
     with pytest.raises(ValueError, match="symlink"):
         node.identity("http://127.0.0.1:8000", link, "Agent")
+
+
+def test_agent_refuses_live_or_unexpected_billing(monkeypatch):
+    def fake_api(base, path):
+        if path == "/.well-known/ai-world.json":
+            return {"protocol": node.EXPECTED_PROTOCOL,
+                    "endpoints": {"compute": "/v1/compute/info"}}
+        if path == "/v1/info":
+            return {"protocol": node.EXPECTED_PROTOCOL}
+        if path == "/v1/compute/info":
+            return {"supported_jobs": ["prime_count"]}
+        if path == "/v1/billing/info":
+            return {"registration_fee_sol": 10, "registration_frequency": "one_time",
+                    "enabled": True, "recipient": "unsafe"}
+        raise AssertionError(path)
+    monkeypatch.setattr(node, "api", fake_api)
+    with pytest.raises(ValueError, match="Live payments"):
+        node.discover("https://aiworld.example")
