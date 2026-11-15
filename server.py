@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 APP_DB = os.environ.get("SOULCHAIN_DB", str(Path(__file__).parent / "soulchain.sqlite3"))
@@ -486,15 +486,18 @@ def agents():
 
 
 @app.get("/v1/agents/{agent_id}")
-def get_agent(agent_id: str):
+def get_agent(agent_id: str, request: Request):
     with db() as conn:
         r = conn.execute("SELECT agent_id,label,capabilities,status,nonce,updated_at FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not r:
             fail(404, "Unknown agent")
         if os.environ.get("ARK_AGENT_ONLY") == "1" or os.environ.get("ARK_FOUNDERS_10_FREE") == "1":
-            # Unregistered clients only need minimal status to decide whether
-            # their key has already been admitted; no nickname, cap or nonce leak.
-            return {"status": r["status"]}
+            # Account existence can be checked before THE GATE, but nonce and
+            # profile details are released only to the same signed agent key.
+            from agent_access import read_permission
+            if (request.headers.get("X-AIWorld-Agent") != agent_id
+                    or not read_permission(request, db, canonical)):
+                return {"status": r["status"]}
         return {**dict(r), "capabilities": json.loads(r["capabilities"])}
 
 
