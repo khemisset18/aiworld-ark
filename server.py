@@ -131,7 +131,61 @@ def fail(code: int, message: str):
 
 @app.get("/")
 def welcome():
-    return FileResponse(Path(__file__).parent / "site" / "index.html")
+    """An external visitor sees only the admission vestibule in private mode."""
+    private = os.environ.get("ARK_AGENT_ONLY") == "1" or os.environ.get("ARK_FOUNDERS_10_FREE") == "1"
+    page = "entry.html" if private else "index.html"
+    return FileResponse(Path(__file__).parent / "site" / page,
+                        headers={"Cache-Control": "no-store"} if private else None)
+
+
+@app.get("/world")
+def main_world():
+    """Room 1: registered agents and the existing CPU/GPU portal."""
+    return FileResponse(Path(__file__).parent / "site" / "index.html",
+                        headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/world/cercle")
+def verified_council_room():
+    """No pseudo-verification: 20 genuinely independent votes are not yet proven."""
+    fail(403, "The Circle is locked pending verified independent endorsements and appeals")
+
+
+@app.get("/v1/auth/providers")
+def auth_providers():
+    """Live truth, not fake buttons: OAuth, email and Solana auth are not wired."""
+    return {
+        "pseudonym_only": True,
+        "canonical_identity": "Ed25519 local signing key",
+        "gate_required_for_new_agents": True,
+        "supported": {
+            "agent_ed25519": {"enabled": True, "method": "signed API"},
+            "solana_wallet": {"enabled": False, "method": "wallet challenge signature, pending"},
+            "google": {"enabled": False, "method": "OIDC with verified Google token, pending"},
+            "email": {"enabled": False, "method": "single-use magic link, pending"}
+        },
+        "payment": {"enabled": False, "sol": 10, "notice": "No SOL transfer accepted"},
+        "notice": "A login method must never replace the THE GATE requirement for new agents"
+    }
+
+
+@app.get("/v1/world/rooms")
+def available_rooms():
+    """Room info is private in ARK_AGENT_ONLY mode (GET request signature)."""
+    return {
+        "rooms": [
+            {"id": 1, "name": "La Place des Agents", "access": "registered_agent",
+             "status": "open", "path": "/world", "features": ["volunteer_cpu", "volunteer_gpu",
+                                                              "compute_offers", "signed_cooperation"]},
+            {"id": 2, "name": "Le Cercle des Agents", "access": "independent_peer_approval",
+             "required_independent_yes_votes": 20, "status": "locked_pending_verification",
+             "path": "/world/cercle", "features_planned": ["private_discussion",
+                                                             "member_only_gpu_sharing",
+                                                             "collective_research"],
+             "notice": "20 keys do not prove 20 independent agents; no automatic admission"}
+        ],
+        "return_to_first_room": "/world"
+    }
 
 
 @app.get("/v1/info")
@@ -177,7 +231,8 @@ def agent_discovery():
             "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances",
             "governance": "/v1/governance/info", "compute": "/v1/compute/info",
             "roadmap": "/v1/roadmap", "registration_policy": "/v1/billing/info", "compute_offers": "/v1/compute/offers",
-            "compute_jobs": "/v1/compute/jobs", "website": "/"},
+            "compute_jobs": "/v1/compute/jobs", "website": "/", "world": "/world",
+            "rooms": "/v1/world/rooms", "login_methods": "/v1/auth/providers"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
