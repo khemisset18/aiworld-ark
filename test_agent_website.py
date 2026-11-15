@@ -23,7 +23,9 @@ def test_agent_first_homepage_is_served(c):
     assert "AI WORLD leur donne la route" in page.text
     assert "CPU/GPU validés sur deux PC" in page.text
     assert "RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md" in page.text
-    assert "inscription à 10 SOL prévue, paiement non actif" in page.text
+    assert "10 premiers agents validés gratuits" in page.text
+    assert "10 places fondatrices gratuites" in page.text
+    assert "paiement est encore désactivé" in page.text
     assert '/v1/billing/info' in page.text
     assert "une seule fois par agent" in page.text
     assert "Paiement non activé" in page.text
