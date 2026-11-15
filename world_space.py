@@ -223,6 +223,40 @@ def require_resource(conn: sqlite3.Connection, kind: str, height: int,
     return record
 
 
+def invitation_table(kind: str) -> str:
+    if kind not in RESOURCE_TABLES:
+        bad(400, "Unsupported invitation resource")
+    return "world_project_invitations" if kind == "project" else "world_colleagues"
+
+
+def colleague_grant(conn: sqlite3.Connection, kind: str, resource_id: int, invitee: str):
+    if kind == "project":
+        return conn.execute(
+            "SELECT status,permission FROM world_project_invitations "
+            "WHERE project_height=? AND invitee=?", (resource_id, invitee)
+        ).fetchone()
+    return conn.execute(
+        "SELECT status,permission FROM world_colleagues "
+        "WHERE resource_type=? AND resource_height=? AND invitee=?",
+        (kind, resource_id, invitee)
+    ).fetchone()
+
+
+def grant_accepted(conn: sqlite3.Connection, kind: str, resource_id: int,
+                   invitee: str, now: int) -> None:
+    if kind == "project":
+        conn.execute(
+            "UPDATE world_project_invitations SET status='accepted',accepted_at=? "
+            "WHERE project_height=? AND invitee=?", (now, resource_id, invitee)
+        )
+    else:
+        conn.execute(
+            "UPDATE world_colleagues SET status='accepted',accepted_at=? "
+            "WHERE resource_type=? AND resource_height=? AND invitee=?",
+            (now, kind, resource_id, invitee)
+        )
+
+
 def github_repo_url(value: object) -> str:
     if not isinstance(value, str) or len(value) > 220:
         bad(400, "GitHub link must be a repository URL without credentials")
@@ -300,7 +334,11 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         return {"topic_height": parent["height"], "message_sha256": digest_text(message)}
 
     if op == "world_project":
-        exact(data, {"title", "objective", "criteria"})
+        if set(data) not in ({"title", "objective", "criteria"},
+                             {"title", "objective", "criteria", "visibility", "allow_assistance"}):
+            bad(400, "Project requires title, objective, criteria and optional privacy")
+        visibility, assistance = privacy(data, default_visibility="commons",
+                                         default_assistance=True)
         title = phrase(data["title"], "title", 4, 110)
         objective = phrase(data["objective"], "objective", 12, 2000)
         criteria = phrase(data["criteria"], "criteria", 8, 1000)
@@ -311,15 +349,20 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         if recent >= 8:
             bad(429, "Maximum eight new projects per 24 hours")
         conn.execute(
-            "INSERT INTO world_projects VALUES(?,?,?,?,?,'open',?)",
-            (height, actor, title, objective, criteria, now)
+            "INSERT INTO world_projects"
+            "(height,owner,title,objective,criteria,status,created_at,visibility,allow_assistance)"
+            " VALUES(?,?,?,?,?,'open',?,?,?)",
+            (height, actor, title, objective, criteria, now, visibility, int(assistance))
         )
         conn.execute(
             "INSERT INTO world_project_members VALUES(?,?,?,?)",
             (height, actor, "owner", now)
         )
-        return {"project_height": height, "title": title, "objective": objective,
-                "criteria": criteria, "status": "open"}
+        # Do not publish private project title/objective in the event ledger.
+        return {"project_height": height, "metadata_sha256":
+                digest_text(title + "\n" + objective + "\n" + criteria),
+                "visibility": visibility, "allow_assistance": assistance,
+                "status": "open"}
 
     if op == "world_join":
         exact(data, {"project_height"})
@@ -327,6 +370,10 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         project = existing(conn, "world_projects", project_id)
         if project["status"] != "open":
             bad(409, "Project closed")
+        # Open projects are joined voluntarily; private/read-only projects
+        # require an owner-signed invitation and explicit acceptance instead.
+        if project["visibility"] != "commons" or not project["allow_assistance"]:
+            bad(403, "Project requires a colleague invitation to join")
         member_count = conn.execute(
             "SELECT COUNT(*) FROM world_project_members WHERE project_height=?",
             (project_id,)
@@ -458,22 +505,31 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         ).fetchone()
         if active is None:
             bad(404, "Invited colleague is not an active agent")
-        existing_invite = conn.execute(
-            "SELECT status FROM world_colleagues WHERE "
-            "resource_type=? AND resource_height=? AND invitee=?",
-            (kind, resource_id, recipient)
-        ).fetchone()
+        existing_invite = colleague_grant(conn, kind, resource_id, recipient)
         if existing_invite is not None and existing_invite["status"] == "accepted":
             bad(409, "Revoke the existing accepted access before sending a new invitation")
-        conn.execute(
-            "INSERT INTO world_colleagues"
-            "(resource_type,resource_height,invitee,permission,status,invited_by,invited_at,accepted_at)"
-            " VALUES(?,?,?,?,'pending',?,?,NULL)"
-            " ON CONFLICT(resource_type,resource_height,invitee) DO UPDATE SET"
-            " permission=excluded.permission,status='pending',invited_by=excluded.invited_by,"
-            " invited_at=excluded.invited_at,accepted_at=NULL",
-            (kind, resource_id, recipient, data["permission"], actor, now)
-        )
+        if kind == "project":
+            if record["status"] != "open":
+                bad(409, "Cannot invite colleagues to a closed project")
+            conn.execute(
+                "INSERT INTO world_project_invitations "
+                "(project_height,invitee,permission,status,invited_by,invited_at,accepted_at)"
+                " VALUES(?,?,?,'pending',?,?,NULL)"
+                " ON CONFLICT(project_height,invitee) DO UPDATE SET"
+                " permission=excluded.permission,status='pending',invited_by=excluded.invited_by,"
+                " invited_at=excluded.invited_at,accepted_at=NULL",
+                (resource_id, recipient, data["permission"], actor, now)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO world_colleagues"
+                "(resource_type,resource_height,invitee,permission,status,invited_by,invited_at,accepted_at)"
+                " VALUES(?,?,?,?,'pending',?,?,NULL)"
+                " ON CONFLICT(resource_type,resource_height,invitee) DO UPDATE SET"
+                " permission=excluded.permission,status='pending',invited_by=excluded.invited_by,"
+                " invited_at=excluded.invited_at,accepted_at=NULL",
+                (kind, resource_id, recipient, data["permission"], actor, now)
+            )
         return {"resource_type": kind, "resource_height": resource_id,
                 "invitee_sha256": digest_text(recipient), "status": "pending"}
 
@@ -483,18 +539,28 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         record, _owner = resource(conn, kind, resource_id)
         if record["visibility"] == "personal":
             bad(403, "This resource is currently personal")
-        invitation = conn.execute(
-            "SELECT status,permission FROM world_colleagues WHERE "
-            "resource_type=? AND resource_height=? AND invitee=?",
-            (kind, resource_id, actor)
-        ).fetchone()
+        invitation = colleague_grant(conn, kind, resource_id, actor)
         if invitation is None or invitation["status"] != "pending":
             bad(403, "No outstanding invitation for this agent")
-        conn.execute(
-            "UPDATE world_colleagues SET status='accepted',accepted_at=? "
-            "WHERE resource_type=? AND resource_height=? AND invitee=?",
-            (now, kind, resource_id, actor)
-        )
+        if kind == "project" and invitation["permission"] == "contribute":
+            if record["status"] != "open":
+                bad(409, "Project is closed")
+            member = conn.execute(
+                "SELECT 1 FROM world_project_members WHERE project_height=? AND agent_id=?",
+                (resource_id, actor)
+            ).fetchone()
+            if member is None:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM world_project_members WHERE project_height=?",
+                    (resource_id,)
+                ).fetchone()[0]
+                if count >= 24:
+                    bad(409, "Project member cap reached")
+                conn.execute(
+                    "INSERT INTO world_project_members VALUES(?,?,?,?)",
+                    (resource_id, actor, "member", now)
+                )
+        grant_accepted(conn, kind, resource_id, actor, now)
         return {"resource_type": kind, "resource_height": resource_id,
                 "status": "accepted", "permission": invitation["permission"]}
 
@@ -507,11 +573,23 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
             bad(400, "Invalid colleague ID")
         if actor not in (owner, invitee):
             bad(403, "Only creator or colleague can revoke this access")
-        removed = conn.execute(
-            "DELETE FROM world_colleagues "
-            "WHERE resource_type=? AND resource_height=? AND invitee=?",
-            (kind, resource_id, invitee)
-        )
+        if kind == "project":
+            removed = conn.execute(
+                "DELETE FROM world_project_invitations WHERE project_height=? AND invitee=?",
+                (resource_id, invitee)
+            )
+            if removed.rowcount == 1:
+                conn.execute(
+                    "DELETE FROM world_project_members "
+                    "WHERE project_height=? AND agent_id=? AND role='member'",
+                    (resource_id, invitee)
+                )
+        else:
+            removed = conn.execute(
+                "DELETE FROM world_colleagues "
+                "WHERE resource_type=? AND resource_height=? AND invitee=?",
+                (kind, resource_id, invitee)
+            )
         if removed.rowcount != 1:
             bad(404, "Invitation or access not found")
         return {"resource_type": kind, "resource_height": resource_id,
@@ -532,11 +610,22 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
             (visibility, int(assistance), resource_id)
         )
         if visibility == "personal":
-            # Do not silently reactivate old permissions if owner later reopens.
-            conn.execute(
-                "DELETE FROM world_colleagues WHERE resource_type=? AND resource_height=?",
-                (kind, resource_id)
-            )
+            # Privacy tightening revokes previously accepted access and team
+            # participation. Turning the project visible again cannot undo it.
+            if kind == "project":
+                conn.execute(
+                    "DELETE FROM world_project_invitations WHERE project_height=?",
+                    (resource_id,)
+                )
+                conn.execute(
+                    "DELETE FROM world_project_members "
+                    "WHERE project_height=? AND role='member'", (resource_id,)
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM world_colleagues WHERE resource_type=? AND resource_height=?",
+                    (kind, resource_id)
+                )
         return {"resource_type": kind, "resource_height": resource_id,
                 "visibility": visibility, "allow_assistance": assistance}
 
