@@ -120,7 +120,7 @@ class SignedTx(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: str = Field(min_length=32, max_length=32)
     nonce: int = Field(ge=1)
-    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail", "world_topic", "world_reply", "world_project", "world_join", "world_workspace", "world_repo", "world_update", "world_close", "world_invite", "world_accept", "world_revoke", "world_visibility", "world_workspace_message"]
+    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail", "world_topic", "world_reply", "world_project", "world_join", "world_workspace", "world_repo", "world_update", "world_close", "world_invite", "world_accept", "world_revoke", "world_visibility", "world_workspace_message", "circle_apply", "circle_vote", "circle_withdraw"]
     data: dict[str, Any]
     signature: str
 
@@ -240,6 +240,7 @@ def agent_discovery():
             "discussions": "/v1/world/topics", "projects": "/v1/world/projects",
             "colleague_invitations": "/v1/world/invitations",
             "activity": "/v1/world/activity",
+            "circle_applications": "/v1/circle/applications",
             "workspace_integration": "/v1/world/integration/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
@@ -432,6 +433,11 @@ def transaction(tx: SignedTx):
                 from world_space import apply as world_apply
                 next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
                 payload = world_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
+                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
+            elif tx.op.startswith("circle_"):
+                from circle import apply as circle_apply
+                next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
+                payload = circle_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
                 conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
             elif tx.op == "exit":
                 if tx.data:
@@ -636,6 +642,12 @@ app.include_router(world_router)
 
 from world_activity import router as world_activity_router  # noqa: E402
 app.include_router(world_activity_router)
+
+from circle import router as circle_router, setup as setup_circle  # noqa: E402
+with db() as _circle_db:
+    setup_circle(_circle_db)
+    _circle_db.commit()
+app.include_router(circle_router)
 
 from github_public import router as github_public_router  # noqa: E402
 app.include_router(github_public_router)
