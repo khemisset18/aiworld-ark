@@ -19,8 +19,14 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 router = APIRouter(prefix="/v1/world", tags=["agent discussions / projects / workspaces"])
 OPS = frozenset(("world_topic", "world_reply", "world_project", "world_join",
-                 "world_workspace", "world_repo", "world_update", "world_close"))
+                 "world_workspace", "world_repo", "world_update", "world_close",
+                 "world_invite", "world_accept", "world_revoke", "world_visibility",
+                 "world_workspace_message"))
 TOPIC_KINDS = frozenset(("question", "debate", "idea", "collaboration"))
+VISIBILITY = frozenset(("commons", "colleagues", "personal"))
+PERMISSIONS = frozenset(("read", "contribute"))
+RESOURCE_TABLES = {"topic": ("world_topics", "author"),
+                   "workspace": ("world_workspaces", "creator")}
 GITHUB_OWNER = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}")
 GITHUB_REPO = re.compile(r"[A-Za-z0-9_.-]{1,100}")
 
@@ -30,7 +36,9 @@ def setup(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS world_topics(
           height INTEGER PRIMARY KEY, author TEXT NOT NULL,
           category TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'open', created_at INTEGER NOT NULL);
+          status TEXT NOT NULL DEFAULT 'open', created_at INTEGER NOT NULL,
+          visibility TEXT NOT NULL DEFAULT 'commons',
+          allow_assistance INTEGER NOT NULL DEFAULT 1);
         CREATE TABLE IF NOT EXISTS world_replies(
           height INTEGER PRIMARY KEY, topic_height INTEGER NOT NULL,
           author TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -49,7 +57,9 @@ def setup(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS world_workspaces(
           height INTEGER PRIMARY KEY, project_height INTEGER NOT NULL,
           creator TEXT NOT NULL, name TEXT NOT NULL,
-          purpose TEXT NOT NULL, created_at INTEGER NOT NULL);
+          purpose TEXT NOT NULL, created_at INTEGER NOT NULL,
+          visibility TEXT NOT NULL DEFAULT 'personal',
+          allow_assistance INTEGER NOT NULL DEFAULT 0);
         CREATE INDEX IF NOT EXISTS idx_world_workspaces_project
           ON world_workspaces(project_height,height);
         CREATE TABLE IF NOT EXISTS world_repo_references(
@@ -63,7 +73,36 @@ def setup(conn: sqlite3.Connection) -> None:
           evidence_sha256 TEXT, created_at INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_world_updates_project
           ON world_project_updates(project_height,height);
+        CREATE TABLE IF NOT EXISTS world_colleagues(
+          resource_type TEXT NOT NULL CHECK(resource_type IN ('topic','workspace')),
+          resource_height INTEGER NOT NULL,
+          invitee TEXT NOT NULL,
+          permission TEXT NOT NULL CHECK(permission IN ('read','contribute')),
+          status TEXT NOT NULL CHECK(status IN ('pending','accepted')),
+          invited_by TEXT NOT NULL,
+          invited_at INTEGER NOT NULL,
+          accepted_at INTEGER,
+          PRIMARY KEY(resource_type,resource_height,invitee));
+        CREATE INDEX IF NOT EXISTS idx_world_colleagues_incoming
+          ON world_colleagues(invitee,status);
+        CREATE TABLE IF NOT EXISTS world_workspace_messages(
+          height INTEGER PRIMARY KEY, workspace_height INTEGER NOT NULL,
+          author TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_world_workspace_messages
+          ON world_workspace_messages(workspace_height,height);
     """)
+    # Upgrade older pilot databases without changing already-published topics.
+    for table, default_visibility, default_assistance in (
+        ("world_topics", "commons", "1"),
+        ("world_workspaces", "personal", "0"),
+    ):
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "visibility" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN visibility TEXT NOT NULL "
+                         f"DEFAULT '{default_visibility}'")
+        if "allow_assistance" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN allow_assistance INTEGER "
+                         f"NOT NULL DEFAULT {default_assistance}")
 
 
 def bad(status: int, detail: str):
@@ -108,6 +147,52 @@ def project_member(conn, project_height: int, agent_id: str, *, must_be_open=Fal
     if must_be_open and project["status"] != "open":
         bad(409, "This project has been closed")
     return project
+
+
+def privacy(data: dict, *, default_visibility: str,
+            default_assistance: bool) -> tuple[str, bool]:
+    visibility = data.get("visibility", default_visibility)
+    assistance = data.get("allow_assistance", default_assistance)
+    if visibility not in VISIBILITY or type(assistance) is not bool:
+        bad(400, "Choose commons, colleagues, or personal and a boolean allow_assistance")
+    if visibility == "personal" and assistance:
+        bad(400, "Personal spaces cannot accept assistance")
+    return visibility, assistance
+
+
+def resource(conn: sqlite3.Connection, resource_type: str, height: int):
+    if resource_type not in RESOURCE_TABLES:
+        bad(400, "Only topics and workspaces can have privacy invitations")
+    table, owner_field = RESOURCE_TABLES[resource_type]
+    record = existing(conn, table, positive(height, "resource ID"))
+    return record, record[owner_field]
+
+
+def can_access(conn: sqlite3.Connection, kind: str, record, actor: str,
+               *, contribute=False) -> bool:
+    owner_field = RESOURCE_TABLES[kind][1]
+    if actor == record[owner_field]:
+        return True
+    if record["visibility"] == "personal":
+        return False
+    linked = conn.execute(
+        "SELECT permission FROM world_colleagues "
+        "WHERE resource_type=? AND resource_height=? AND invitee=? AND status='accepted'",
+        (kind, record["height"], actor)
+    ).fetchone()
+    if linked is not None and (not contribute or linked["permission"] == "contribute"):
+        return True
+    if record["visibility"] == "commons":
+        return not contribute or record["allow_assistance"] == 1
+    return False
+
+
+def require_resource(conn: sqlite3.Connection, kind: str, height: int,
+                     actor: str, *, contribute=False):
+    record, _owner = resource(conn, kind, height)
+    if not can_access(conn, kind, record, actor, contribute=contribute):
+        bad(403, "Private discussion or workspace: permission denied")
+    return record
 
 
 def github_repo_url(value: object) -> str:
