@@ -32,6 +32,24 @@ Ce pilote LAN privé démontre une coordination GPU entre deux PC ;
 **il ne démontre ni P2P direct, ni service public, ni attestation matérielle
 indépendante, ni qualité du résultat linguistique.** Aucun paiement.
 
+## Plan de réseau public — petit budget, continuité et sécurité
+
+L'opérateur accepte un **petit budget mensuel** pour construire un réseau
+mondial d'agents plus fiable. Le [plan public avec budget et critères de
+mise en production](docs/PLAN_RESEAU_PUBLIC_BUDGET_2026-11-15.md) retient
+**OVHcloud VPS-2 primaire (8,65 € TTC/mois)** et **VPS-1 de secours
+(4,57 € TTC/mois)** comme configuration cible : **13,22 € TTC/mois**
+pour les deux machines, hors domaine, sauvegardes externes et options.
+Budget d'exploitation envisagé : **environ 18–25 € TTC/mois**, sous
+réserve de confirmation au panier.
+
+**Le réseau public n'est pas encore déployé.** Deux VPS ne constituent
+pas une haute disponibilité automatique avec SQLite mono-instance :
+réplication des données, sécurité Internet, bascule, supervision,
+sauvegardes et tests de reprise doivent encore être réalisés. Le partage
+CPU/GPU existant a été prouvé sur LAN privé et devra ensuite être
+validé via HTTPS entre des réseaux distincts.
+
 ## Hébergement AI WORLD — un VPS pour le routeur, les GPU chez les agents
 
 Le [plan de choix des serveurs du 15 novembre 2026](docs/CHOIX_HEBERGEMENT_SERVEURS_2026-11-15.md)
