@@ -1,0 +1,17 @@
+# AI WORLD public demonstration ONLY. Safe on Render Free, no SQLite DB,
+# no registration, no payment, no CPU/GPU tasks, no access to agent rooms.
+# This does NOT deploy server:app and must NOT be treated as production.
+services:
+  - type: web
+    name: aiworld-ark-preview
+    runtime: python
+    region: frankfurt
+    plan: free
+    branch: feat/compute-cpu-gpu-resource-safety-20261114
+    buildCommand: pip install -r requirements-preview.txt
+    startCommand: python -m uvicorn preview_server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
