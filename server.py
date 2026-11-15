@@ -238,6 +238,7 @@ def agent_discovery():
             "rooms": "/v1/world/rooms", "login_methods": "/v1/auth/providers",
             "linked_login_methods": "/v1/auth/links",
             "discussions": "/v1/world/topics", "projects": "/v1/world/projects",
+            "colleague_invitations": "/v1/world/invitations",
             "workspace_integration": "/v1/world/integration/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
