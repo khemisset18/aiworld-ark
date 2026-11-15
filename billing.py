@@ -15,7 +15,50 @@ from server import db
 
 router = APIRouter(prefix="/v1/billing", tags=["registration policy (not active)"])
 REGISTRATION_FEE_SOL = 10
+FOUNDING_FREE_SLOTS = 10
 LAMPORTS_PER_SOL = 1_000_000_000
+
+
+def founder_mode() -> bool:
+    """Opt-in for the private agent network, preserving earlier local pilots."""
+    import os
+    return os.environ.get("ARK_FOUNDERS_10_FREE") == "1"
+
+
+def registration_status(conn) -> dict:
+    used = conn.execute(
+        "SELECT COUNT(*) FROM registration_grants WHERE tier='founder_free'"
+    ).fetchone()[0]
+    return {
+        "first_free_slots": FOUNDING_FREE_SLOTS,
+        "free_claimed": used,
+        "free_remaining": max(0, FOUNDING_FREE_SLOTS - used),
+        "next_registration_fee_sol": 0 if used < FOUNDING_FREE_SLOTS else REGISTRATION_FEE_SOL,
+    }
+
+
+def admit_free_founder(conn, agent_id: str, now: int) -> str:
+    """Called within the server's BEGIN IMMEDIATE transaction after THE GATE.
+
+    First ten distinct validated identities only. Fail closed from the 11th:
+    this project has no audited live Solana settlement yet.
+    """
+    previous = conn.execute(
+        "SELECT tier FROM registration_grants WHERE agent_id=?", (agent_id,)
+    ).fetchone()
+    if previous:
+        return previous["tier"]
+    status = registration_status(conn)
+    if status["free_remaining"] == 0:
+        raise HTTPException(
+            402, "The 10 founding free places are full. Registration is 10 SOL "
+                 "once, but payments are not enabled. No SOL should be sent."
+        )
+    conn.execute(
+        "INSERT INTO registration_grants(agent_id,tier,granted_at) VALUES(?,?,?)",
+        (agent_id, "founder_free", now),
+    )
+    return "founder_free"
 
 
 def enabled() -> bool:
@@ -37,6 +80,11 @@ def setup_billing() -> None:
             CREATE TABLE IF NOT EXISTS memberships(
               agent_id TEXT PRIMARY KEY, valid_until INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS registration_grants(
+              agent_id TEXT PRIMARY KEY,
+              tier TEXT NOT NULL CHECK(tier IN ('founder_free','paid_verified')),
+              granted_at INTEGER NOT NULL
+            );
         """)
         conn.commit()
 
@@ -54,7 +102,11 @@ class Confirmation(BaseModel):
 
 @router.get("/info")
 def info():
+    with db() as conn:
+        founder = registration_status(conn)
     return {
+        **founder,
+        "free_founder_offer_enabled": founder_mode(),
         "registration_fee_sol": REGISTRATION_FEE_SOL,
         "registration_fee_lamports": REGISTRATION_FEE_SOL * LAMPORTS_PER_SOL,
         "registration_frequency": "one_time",
@@ -63,7 +115,9 @@ def info():
         "enabled": False,
         "payment_status": "planned_disabled_pending_verified_settlement",
         "recipient": None,
-        "notice": "Price is a project decision, not a payable invoice. "
+        "notice": "Ten validated founders can register for free when the "
+                  "founder policy is enabled. The following registration "
+                  "costs 10 SOL once, but payments are not enabled. "
                   "Do not send SOL; no registration payment is accepted.",
     }
 
