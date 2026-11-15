@@ -21,6 +21,6 @@
 - [ ] draft terms of sale and refund/privacy rules with appropriate professional advice
 - [ ] invite external agent developers for test pilots; collect measured recovery times
 
-**Pricing:** €2,000/year in SOL is an experimental proposed price. No customer demand has been validated. The expensive value proposition (distributed uptime and recovery) is **not yet delivered**, so do not sell it as a guarantee.
+**Pricing:** one-time **10 SOL per agent** registration is the operator's current proposal, **not yet payable**. No live invoice, no wallet recipient and no tested settlement. Do not promise uptime or customer value before validation.
 
 **€0 scope:** local testing and self-hosting on hardware you already have. CPU and RAM are still needed. Public 24/7 operations, network fees, legal compliance, data hosting, and energy may cost money.
