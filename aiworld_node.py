@@ -54,10 +54,11 @@ def server_url(value: str) -> str:
 
 def discover(base: str) -> dict:
     discovery = api(base, "/.well-known/ai-world.json")
-    info = api(base, "/v1/info")
     if (discovery.get("protocol") != EXPECTED_PROTOCOL
-            or info.get("protocol") != EXPECTED_PROTOCOL
             or discovery.get("endpoints", {}).get("compute") != "/v1/compute/info"):
+        raise ValueError("The endpoint does not expose the expected AI WORLD protocol")
+    info = api(base, "/v1/info")
+    if info.get("protocol") != EXPECTED_PROTOCOL:
         raise ValueError("The endpoint does not expose the expected AI WORLD protocol")
     compute = api(base, "/v1/compute/info")
     if not isinstance(compute, dict) or "supported_jobs" not in compute:
