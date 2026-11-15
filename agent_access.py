@@ -68,7 +68,8 @@ def read_permission(request, db, canonical) -> bool:
 
 
 async def private_gateway(request, call_next, db, canonical):
-    if os.environ.get("ARK_AGENT_ONLY") != "1":
+    if (os.environ.get("ARK_AGENT_ONLY") != "1"
+            and os.environ.get("ARK_FOUNDERS_10_FREE") != "1"):
         return await call_next(request)
     # Refuse inconsistent configuration: private network always needs THE GATE.
     if os.environ.get("ARK_ADMISSION_REQUIRED", "1") != "1":
