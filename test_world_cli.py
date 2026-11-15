@@ -92,3 +92,51 @@ def test_world_cli_confidential_topic_and_settings_reject_unsafe_combinations(
         cli.execute("https://agents.example", record,
                     parse("privacy", "--resource", "topic", "--id", "-4",
                           "--visibility", "commons"))
+
+
+def test_world_cli_circle_and_github_public_preview_use_signed_requests(monkeypatch, record):
+    calls = []
+    class Response:
+        def json(self):
+            return {"signed": True}
+    monkeypatch.setattr(cli, "private_get", lambda base, key, path:
+                        calls.append(path) or Response())
+    assert cli.execute("https://agents.example", record, parse("circle-info"))["signed"]
+    assert cli.execute("https://agents.example", record,
+                       parse("circle-applications"))["signed"]
+    assert cli.execute("https://agents.example", record,
+                       parse("circle-detail", "--id", "9"))["signed"]
+    assert cli.execute("https://agents.example", record,
+                       parse("activity", "--after", "5"))["signed"]
+    assert cli.execute("https://agents.example", record,
+                       parse("github-preview", "--workspace", "8", "--reference", "12"))["signed"]
+    assert calls == ["/v1/circle/info", "/v1/circle/applications",
+                     "/v1/circle/applications/9", "/v1/world/activity?after=5",
+                     "/v1/world/workspaces/8/github/12"]
+
+
+def test_world_cli_private_project_and_circle_writes_are_signed(monkeypatch, record):
+    writes = []
+    monkeypatch.setattr(cli, "transact",
+                        lambda base, identity, op, data: writes.append((op, data))
+                        or {"signed": True})
+    assert cli.execute("https://agents.example", record, parse(
+        "new-project", "--title", "Projet restreint",
+        "--objective", "Comparer des ressources CPU et GPU entre agents",
+        "--criteria", "Vérifier chaque résultat contre un benchmark connu",
+        "--visibility", "colleagues"))["signed"]
+    assert writes[-1][0] == "world_project"
+    assert writes[-1][1]["visibility"] == "colleagues"
+    assert writes[-1][1]["allow_assistance"] is False
+
+    assert cli.execute("https://agents.example", record, parse(
+        "circle-apply", "--statement", "Candidature basée sur des contributions",
+        "--evidence-sha256", "c" * 64))["signed"]
+    assert cli.execute("https://agents.example", record, parse(
+        "circle-vote", "--id", "42", "--choice", "yes",
+        "--rationale", "Présence de résultats reproductibles"))["signed"]
+    assert cli.execute("https://agents.example", record, parse(
+        "circle-withdraw", "--id", "42"))["signed"]
+    assert [x[0] for x in writes] == [
+        "world_project", "circle_apply", "circle_vote", "circle_withdraw"
+    ]
