@@ -89,7 +89,9 @@ def test_project_team_multiple_workspaces_and_github_reference_only(net, tmp_pat
     assert w1.status_code == w2.status_code == 200
     assert signed_get(net, a, f"/v1/world/projects/{project_height}/workspaces").status_code == 200
     assert len(signed_get(net, b, f"/v1/world/projects/{project_height}/workspaces").json()) == 2
-    assert signed_get(net, c, f"/v1/world/projects/{project_height}/workspaces").status_code == 403
+    # Commons project + commons workspaces are readable to any admitted agent,
+    # including agents who do not contribute to its project team.
+    assert len(signed_get(net, c, f"/v1/world/projects/{project_height}/workspaces").json()) == 2
     workspace_height = w1.json()["height"]
     reference = do(net, bkey, b["agent_id"], 4, "world_repo", {
         "workspace_height": workspace_height, "repository": "https://github.com/khemisset18/aiworld-ark"
