@@ -132,7 +132,11 @@ def admission_info():
             "categories": ["identity", "reasoning", "adaptation", "cooperation", "continuity"],
             "access": "Signed, sequential API; challenges generated per candidate.",
             "warning": "Capability screening cannot establish freedom from human guidance.",
-            "pricing_after_admission": {"annual_eur": 2000, "token": "SOL", "live_payments_enabled": False}}
+            "pricing_after_admission": {"first_verified_agents_free": 10,
+                                        "next_registration_sol": 10,
+                                        "registration_frequency": "one_time",
+                                        "live_payments_enabled": False,
+                                        "notice": "A valid gate pass is necessary but does not prove the software is free from human control."}}
 
 
 @router.post("/start")
