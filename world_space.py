@@ -225,7 +225,11 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         bad(400, "Unknown world operation")
 
     if op == "world_topic":
-        exact(data, {"category", "title", "body"})
+        if set(data) not in ({"category", "title", "body"},
+                             {"category", "title", "body", "visibility", "allow_assistance"}):
+            bad(400, "Topic needs category, title, body and optionally visibility/allow_assistance")
+        visibility, assistance = privacy(data, default_visibility="commons",
+                                         default_assistance=True)
         if data["category"] not in TOPIC_KINDS:
             bad(400, "Unknown discussion category")
         title = phrase(data["title"], "title", 4, 100)
@@ -237,17 +241,23 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         if recent >= 10:
             bad(429, "Maximum ten topics per hour")
         conn.execute(
-            "INSERT INTO world_topics VALUES(?,?,?,?,?,'open',?)",
-            (height, actor, data["category"], title, body, now)
+            "INSERT INTO world_topics"
+            "(height,author,category,title,body,status,created_at,visibility,allow_assistance)"
+            " VALUES(?,?,?,?,?,'open',?,?,?)",
+            (height, actor, data["category"], title, body, now, visibility, int(assistance))
         )
+        # Never put private topic titles or content into the globally signed ledger.
         return {"topic_height": height, "category": data["category"],
-                "title": title, "body": body, "status": "open"}
+                "content_sha256": digest_text(title + "\n" + body),
+                "visibility": visibility, "allow_assistance": assistance,
+                "status": "open"}
 
     if op == "world_reply":
         exact(data, {"topic_height", "message"})
         parent = existing(conn, "world_topics", positive(data["topic_height"], "topic ID"))
         if parent["status"] != "open":
             bad(409, "Discussion is closed")
+        require_resource(conn, "topic", parent["height"], actor, contribute=True)
         message = phrase(data["message"], "message", 1, 2400)
         recent = conn.execute(
             "SELECT COUNT(*) FROM world_replies WHERE author=? AND created_at>?",
@@ -259,7 +269,7 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
             "INSERT INTO world_replies VALUES(?,?,?,?,?)",
             (height, parent["height"], actor, message, now)
         )
-        return {"topic_height": parent["height"], "message": message}
+        return {"topic_height": parent["height"], "message_sha256": digest_text(message)}
 
     if op == "world_project":
         exact(data, {"title", "objective", "criteria"})
@@ -307,7 +317,12 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         return {"project_height": project_id, "status": "joined"}
 
     if op == "world_workspace":
-        exact(data, {"project_height", "name", "purpose"})
+        if set(data) not in ({"project_height", "name", "purpose"},
+                             {"project_height", "name", "purpose",
+                              "visibility", "allow_assistance"}):
+            bad(400, "Workspace needs project, name, purpose and optional privacy settings")
+        visibility, assistance = privacy(data, default_visibility="personal",
+                                         default_assistance=False)
         project_id = positive(data["project_height"], "project ID")
         project_member(conn, project_id, actor, must_be_open=True)
         count = conn.execute(
@@ -318,19 +333,25 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict,
         name = phrase(data["name"], "workspace name", 2, 70)
         purpose = phrase(data["purpose"], "workspace purpose", 8, 1200)
         conn.execute(
-            "INSERT INTO world_workspaces VALUES(?,?,?,?,?,?)",
-            (height, project_id, actor, name, purpose, now)
+            "INSERT INTO world_workspaces"
+            "(height,project_height,creator,name,purpose,created_at,visibility,allow_assistance)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (height, project_id, actor, name, purpose, now, visibility, int(assistance))
         )
         # Workspace details are member-scoped; never put their contents on the ledger.
         return {"workspace_height": height, "project_height": project_id,
                 "workspace_digest": digest_text(name + "\n" + purpose),
+                "visibility": visibility, "allow_assistance": assistance,
                 "status": "created"}
 
     if op == "world_repo":
         exact(data, {"workspace_height", "repository"})
         ws_id = positive(data["workspace_height"], "workspace ID")
         ws = existing(conn, "world_workspaces", ws_id)
-        project_member(conn, ws["project_height"], actor, must_be_open=True)
+        project = existing(conn, "world_projects", ws["project_height"])
+        if project["status"] != "open":
+            bad(409, "Project closed")
+        require_resource(conn, "workspace", ws_id, actor, contribute=True)
         repo = github_repo_url(data["repository"])
         existing_ref = conn.execute(
             "SELECT 1 FROM world_repo_references "
