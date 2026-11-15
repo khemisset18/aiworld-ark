@@ -170,7 +170,7 @@ def agent_discovery():
             "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
             "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances",
             "governance": "/v1/governance/info", "compute": "/v1/compute/info",
-            "roadmap": "/v1/roadmap", "compute_offers": "/v1/compute/offers",
+            "roadmap": "/v1/roadmap", "registration_policy": "/v1/billing/info", "compute_offers": "/v1/compute/offers",
             "compute_jobs": "/v1/compute/jobs", "website": "/"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
@@ -221,7 +221,7 @@ def transaction(tx: SignedTx):
                     "compute_fail", "compute_complete", "compute_review"):
                 from billing import membership_active
                 if not membership_active(tx.agent_id):
-                    fail(402, "Annual membership required for network collaboration")
+                    fail(402, "Registration is required; Solana payment is currently disabled")
             ts = int(time.time())
             payload: dict[str, Any]
             if tx.op == "enter":
