@@ -637,6 +637,9 @@ app.include_router(world_router)
 from world_activity import router as world_activity_router  # noqa: E402
 app.include_router(world_activity_router)
 
+from github_public import router as github_public_router  # noqa: E402
+app.include_router(github_public_router)
+
 from compute_pool import router as compute_router, setup as setup_compute  # noqa: E402
 with db() as _compute_db:
     setup_compute(_compute_db)
