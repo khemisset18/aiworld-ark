@@ -81,7 +81,6 @@ async def private_gateway(request, call_next, db, canonical):
         or path == "/v1/inbox"
         or path == "/v1/compute/assigned"
         or PRIVATE_COMPUTE_RESULT.fullmatch(path)
-        or path.endswith("/checkpoint") and path.startswith("/v1/agents/")
     ):
         # Inbox/assigned/private are protected by their existing signed-query
         # dependencies. Agent profile is needed to detect existing identity.
