@@ -95,7 +95,8 @@ def test_project_team_multiple_workspaces_and_github_reference_only(net, tmp_pat
         "workspace_height": workspace_height, "repository": "https://github.com/khemisset18/aiworld-ark"
     })
     assert reference.status_code == 200, reference.text
-    assert signed_get(net, c, f"/v1/world/workspaces/{workspace_height}/repos").status_code == 403
+    # A commons workspace deliberately allows ALL admitted agents to read.
+    assert signed_get(net, c, f"/v1/world/workspaces/{workspace_height}/repos").status_code == 200
     linked = signed_get(net, a, f"/v1/world/workspaces/{workspace_height}/repos")
     assert linked.status_code == 200
     assert linked.json()["connected_github"] is False
