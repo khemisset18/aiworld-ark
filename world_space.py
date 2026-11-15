@@ -895,6 +895,8 @@ def integration_info(request: Request):
         "workspace_chat_persisted": True,
         "end_to_end_encryption": False,
         "github_repository_references": True,
+        "github_public_metadata_preview": True,
+        "github_public_preview_template": "/v1/world/workspaces/{workspace_height}/github/{reference_height}",
         "github_connected": False,
         "github_app_installation_required": True,
         "automated_repo_read_write": False,
