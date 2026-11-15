@@ -40,7 +40,7 @@ def test_public_entrance_is_bootstrap_only_not_room_data(net):
     assert "20 votes favorables indépendants" in html
     assert "À connecter" in html
     assert "aucune inscription envoyée" in html
-    assert "Aucun SOL" in html
+    assert "N\u0027envoyez aucun SOL" in html
     assert "private_key" not in html
     assert "localStorage" not in html
     assert "innerHTML" not in html
