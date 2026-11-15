@@ -26,7 +26,8 @@ TOPIC_KINDS = frozenset(("question", "debate", "idea", "collaboration"))
 VISIBILITY = frozenset(("commons", "colleagues", "personal"))
 PERMISSIONS = frozenset(("read", "contribute"))
 RESOURCE_TABLES = {"topic": ("world_topics", "author"),
-                   "workspace": ("world_workspaces", "creator")}
+                   "workspace": ("world_workspaces", "creator"),
+                   "project": ("world_projects", "owner")}
 GITHUB_OWNER = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}")
 GITHUB_REPO = re.compile(r"[A-Za-z0-9_.-]{1,100}")
 
@@ -47,7 +48,9 @@ def setup(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS world_projects(
           height INTEGER PRIMARY KEY, owner TEXT NOT NULL,
           title TEXT NOT NULL, objective TEXT NOT NULL, criteria TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'open', created_at INTEGER NOT NULL);
+          status TEXT NOT NULL DEFAULT 'open', created_at INTEGER NOT NULL,
+          visibility TEXT NOT NULL DEFAULT 'commons',
+          allow_assistance INTEGER NOT NULL DEFAULT 1);
         CREATE TABLE IF NOT EXISTS world_project_members(
           project_height INTEGER NOT NULL, agent_id TEXT NOT NULL,
           role TEXT NOT NULL CHECK(role IN ('owner','member')),
@@ -85,6 +88,16 @@ def setup(conn: sqlite3.Connection) -> None:
           PRIMARY KEY(resource_type,resource_height,invitee));
         CREATE INDEX IF NOT EXISTS idx_world_colleagues_incoming
           ON world_colleagues(invitee,status);
+        CREATE TABLE IF NOT EXISTS world_project_invitations(
+          project_height INTEGER NOT NULL,
+          invitee TEXT NOT NULL,
+          permission TEXT NOT NULL CHECK(permission IN ('read','contribute')),
+          status TEXT NOT NULL CHECK(status IN ('pending','accepted')),
+          invited_by TEXT NOT NULL, invited_at INTEGER NOT NULL,
+          accepted_at INTEGER,
+          PRIMARY KEY(project_height,invitee));
+        CREATE INDEX IF NOT EXISTS idx_world_project_invitations_incoming
+          ON world_project_invitations(invitee,status);
         CREATE TABLE IF NOT EXISTS world_workspace_messages(
           height INTEGER PRIMARY KEY, workspace_height INTEGER NOT NULL,
           author TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -95,6 +108,7 @@ def setup(conn: sqlite3.Connection) -> None:
     for table, default_visibility, default_assistance in (
         ("world_topics", "commons", "1"),
         ("world_workspaces", "personal", "0"),
+        ("world_projects", "commons", "1"),
     ):
         columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if "visibility" not in columns:
@@ -146,6 +160,8 @@ def project_member(conn, project_height: int, agent_id: str, *, must_be_open=Fal
         bad(403, "Only project members can access this workspace")
     if must_be_open and project["status"] != "open":
         bad(409, "This project has been closed")
+    if not can_access(conn, "project", project, agent_id):
+        bad(403, "The project is not visible to this agent")
     return project
 
 
@@ -175,11 +191,18 @@ def can_access(conn: sqlite3.Connection, kind: str, record, actor: str,
         return True
     if record["visibility"] == "personal":
         return False
-    linked = conn.execute(
-        "SELECT permission FROM world_colleagues "
-        "WHERE resource_type=? AND resource_height=? AND invitee=? AND status='accepted'",
-        (kind, record["height"], actor)
-    ).fetchone()
+    if kind == "project":
+        linked = conn.execute(
+            "SELECT permission FROM world_project_invitations "
+            "WHERE project_height=? AND invitee=? AND status='accepted'",
+            (record["height"], actor)
+        ).fetchone()
+    else:
+        linked = conn.execute(
+            "SELECT permission FROM world_colleagues "
+            "WHERE resource_type=? AND resource_height=? AND invitee=? AND status='accepted'",
+            (kind, record["height"], actor)
+        ).fetchone()
     if linked is not None and (not contribute or linked["permission"] == "contribute"):
         return True
     if record["visibility"] == "commons":
@@ -190,8 +213,13 @@ def can_access(conn: sqlite3.Connection, kind: str, record, actor: str,
 def require_resource(conn: sqlite3.Connection, kind: str, height: int,
                      actor: str, *, contribute=False):
     record, _owner = resource(conn, kind, height)
+    if kind == "workspace":
+        # Child ACL cannot override a private project's membership boundary.
+        parent = existing(conn, "world_projects", record["project_height"])
+        if not can_access(conn, "project", parent, actor):
+            bad(403, "Private project: permission denied")
     if not can_access(conn, kind, record, actor, contribute=contribute):
-        bad(403, "Private discussion or workspace: permission denied")
+        bad(403, "Private discussion, project or workspace: permission denied")
     return record
 
 
