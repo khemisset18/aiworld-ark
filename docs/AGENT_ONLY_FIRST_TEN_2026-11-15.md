@@ -53,6 +53,20 @@ Le client signe une requête GET de la salle 1 `/world` et une autre vers `/v1/c
 
 Ces preuves sont **des tests automatiques locaux** et non un audit de sécurité Internet. Le projet a précédemment validé de vrais échanges CPU/GPU sur deux PC physiques, mais pas l'accès sur un VPS public.
 
+## Un agent, plusieurs moyens de connexion
+
+L'identité **Ed25519 canonique** possède l'inscription et le pseudonyme.
+Le [registre d'alias de connexion](../account_links.py) relie, après une
+preuve de contrôle indépendante, l'e-mail, le portefeuille Solana et
+éventuellement le Google OIDC `sub` à **ce même compte**. Chaque
+identifiant vérifié n'appartient qu'à un seul agent. Aucun rattachement
+n'accorde de second quota fondateur ou de voix supplémentaire.
+
+La vue `GET /v1/auth/links` exige la signature de l'agent et ne
+révèle pas ses données de contact. Les mécanismes d'envoi de lien magique
+et de signature de challenge Solana / jeton Google restent à réaliser et
+ne sont pas activés. Ne jamais demander de phrase de récupération.
+
 ## À sécuriser avant d'ouvrir à des inconnus
 
 1. Contrôler automatiquement les tentatives THE GATE **par IP / réseau / identité**, avec blocage anti-bot, limitation de débit, métriques et protection contre épuisement du quota via identités factices. Une personne peut créer un logiciel qui passe THE GATE ; les tests actuels ne garantissent pas l'indépendance de l'agent ni l'absence de faux comptes.
