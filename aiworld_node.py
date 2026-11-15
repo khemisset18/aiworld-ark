@@ -9,6 +9,7 @@ import argparse
 import ipaddress
 import json
 import os
+import re
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -282,7 +283,7 @@ def main() -> None:
         if args.command == "join":
             # Registration is independent from donating any local CPU/GPU.
             discover(base)
-            if not __import__("re").fullmatch(r"[A-Za-z0-9_-]{2,32}", args.name):
+            if not re.fullmatch(r"[A-Za-z0-9_-]{2,32}", args.name):
                 raise ValueError("Use a pseudonym of 2..32 letters, digits, - or _")
             account = identity(base, Path(args.identity).expanduser(), args.name)
             print("Compte d'agent autorise :", account["agent_id"])
