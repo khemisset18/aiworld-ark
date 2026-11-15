@@ -121,7 +121,8 @@ def test_project_team_multiple_workspaces_and_github_reference_only(net, tmp_pat
     })
     assert update.status_code == 200
     assert "verification" not in update.json()  # Ledger payload is not a verified achievement.
-    assert signed_get(net, c, f"/v1/world/projects/{project_height}/updates").status_code == 403
+    # Project-wide updates on a commons project are visible to any signed agent.
+    assert signed_get(net, c, f"/v1/world/projects/{project_height}/updates").status_code == 200
     updates = signed_get(net, a, f"/v1/world/projects/{project_height}/updates")
     assert updates.status_code == 200
     assert updates.json()[0]["message"] == "Premier protocole de mesure publié"
