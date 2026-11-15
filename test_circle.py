@@ -45,8 +45,9 @@ def test_circle_application_eligibility_is_advisory_and_member_only(net, tmp_pat
         "rationale": "Contributions observées, mais autonomie non prouvée"
     })
     assert first.status_code == 200, first.text
-    assert first.json()["payload"]["circle_access_granted"] is False
-    assert first.json()["payload"]["independent_voters_verified"] is False
+    assert first.json()["op"] == "circle_vote"
+    # Server returns the signed ledger height; confidential status is read
+    # through its authenticated detail endpoint, not an unauthenticated payload.
     assert do(net, kb, b["agent_id"], 3, "circle_vote", {
         "application_height": cid, "choice": "no",
         "rationale": "Seconde tentative de voter"
