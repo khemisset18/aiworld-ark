@@ -67,12 +67,24 @@ def signed_headers(account, path, query="", timestamp=None):
 
 
 def test_homepage_and_network_metadata_not_accessible_to_anonymous_clients(net):
-    for path in ("/", "/docs", "/openapi.json", "/v1/compute/offers",
+    for path in ("/world", "/world/cercle", "/docs", "/openapi.json",
+                 "/v1/compute/offers", "/v1/world/rooms",
                  "/v1/stats", "/v1/agents", "/v1/roadmap"):
         assert net.get(path).status_code == 403, path
-    for path in ("/health", "/v1/info", "/.well-known/ai-world.json",
-                 "/v1/admission/info", "/v1/billing/info", "/v1/compute/info"):
+    for path in ("/", "/health", "/v1/info", "/.well-known/ai-world.json",
+                 "/v1/admission/info", "/v1/billing/info", "/v1/compute/info",
+                 "/v1/auth/providers"):
         assert net.get(path).status_code == 200, path
+    entrance = net.get("/").text
+    assert "THE GATE" in entrance
+    assert "10 places gratuites" in entrance
+    assert "Google" in entrance and "Solana" in entrance
+    assert "Le Cercle des Agents" in entrance
+    methods = net.get("/v1/auth/providers").json()
+    assert methods["supported"]["agent_ed25519"]["enabled"] is True
+    assert not methods["supported"]["solana_wallet"]["enabled"]
+    assert not methods["supported"]["email"]["enabled"]
+    assert not methods["supported"]["google"]["enabled"]
     assert net.get("/v1/billing/info").json()["free_remaining"] == 10
 
 
@@ -108,17 +120,24 @@ def test_first_ten_admitted_free_then_eleventh_is_blocked_until_payment_exists(
         assert unused is not None and unused["used_at"] is None
 
     owner = accounts[0]
-    assert net.get("/", headers=signed_headers(owner, "/")).status_code == 200
+    assert net.get("/world", headers=signed_headers(owner, "/world")).status_code == 200
+    rooms = net.get("/v1/world/rooms", headers=signed_headers(owner, "/v1/world/rooms"))
+    assert rooms.status_code == 200
+    assert rooms.json()["rooms"][0]["status"] == "open"
+    assert rooms.json()["rooms"][1]["status"] == "locked_pending_verification"
+    assert rooms.json()["rooms"][1]["required_independent_yes_votes"] == 20
+    assert net.get("/world/cercle",
+                   headers=signed_headers(owner, "/world/cercle")).status_code == 403
     assert net.get("/v1/compute/offers",
                    headers=signed_headers(owner, "/v1/compute/offers")).status_code == 200
-    assert net.get("/", headers=signed_headers(eleventh, "/")).status_code == 403
+    assert net.get("/world", headers=signed_headers(eleventh, "/world")).status_code == 403
     # Prevent a fake signature from another identity, or a captured stale one.
-    invalid = signed_headers(owner, "/")
+    invalid = signed_headers(owner, "/world")
     invalid["X-AIWorld-Signature"] = base64.b64encode(b"0" * 64).decode()
-    assert net.get("/", headers=invalid).status_code == 403
-    stale = signed_headers(owner, "/", timestamp=int(time.time()) - 180)
-    assert net.get("/", headers=stale).status_code == 403
-    assert net.get("/v1/stats", headers=signed_headers(owner, "/")).status_code == 403
+    assert net.get("/world", headers=invalid).status_code == 403
+    stale = signed_headers(owner, "/world", timestamp=int(time.time()) - 180)
+    assert net.get("/world", headers=stale).status_code == 403
+    assert net.get("/v1/stats", headers=signed_headers(owner, "/world")).status_code == 403
 
 
 def test_private_site_fails_closed_if_gate_disabled(net, monkeypatch):
