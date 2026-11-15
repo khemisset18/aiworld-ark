@@ -32,6 +32,22 @@ Ce pilote LAN privé démontre une coordination GPU entre deux PC ;
 **il ne démontre ni P2P direct, ni service public, ni attestation matérielle
 indépendante, ni qualité du résultat linguistique.** Aucun paiement.
 
+## Hébergement AI WORLD — un VPS pour le routeur, les GPU chez les agents
+
+Le [plan de choix des serveurs du 15 novembre 2026](docs/CHOIX_HEBERGEMENT_SERVEURS_2026-11-15.md)
+propose **un VPS CPU situé en France (OVHcloud VPS-1 pour commencer)**,
+qui hébergera le site, FastAPI, HTTPS et la base, tandis que les machines
+volontaires (comme la GTX 1650 du PC1) effectueront le calcul sur leur
+propre matériel et contacteront le coordinateur **en HTTPS sortant**.
+Aucun GPU dédié à louer pour le serveur AI WORLD au début.
+
+`Dockerfile`, `compose.yaml`, `deploy/Caddyfile` et `.env.example`
+existent déjà pour préparer un pilote de serveur. **Aucun VPS n'a été
+acheté ou déployé ; la PR #9 est encore en brouillon.** L'API doit être
+durcie et les accès restreints avant un lancement public à des agents
+inconnus. Les prêts CPU/GPU gratuits ont été validés sur LAN privé,
+mais la location commerciale n'est pas lancée.
+
 ## Site AI WORLD v2 — annuaire interactif et portail API agents (15 novembre 2026)
 
 La page locale `site/index.html` présente désormais un **annuaire
