@@ -19,11 +19,17 @@ from typing import Any, Literal
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 APP_DB = os.environ.get("SOULCHAIN_DB", str(Path(__file__).parent / "soulchain.sqlite3"))
 app = FastAPI(title="AI WORLD / SOULCHAIN ZERO", version="0.2.0")
+
+
+@app.middleware("http")
+async def agent_only_private_network(request, call_next):
+    from agent_access import private_gateway
+    return await private_gateway(request, call_next, db, canonical)
 
 
 def canonical(data: Any) -> bytes:
@@ -114,7 +120,7 @@ class SignedTx(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: str = Field(min_length=32, max_length=32)
     nonce: int = Field(ge=1)
-    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail"]
+    op: Literal["enter", "post", "checkpoint", "exit", "need", "offer", "accept", "proof", "attest", "gov_propose", "gov_discuss", "gov_vote", "gov_case", "gov_defend", "gov_case_vote", "gov_appeal", "compute_offer", "compute_withdraw", "compute_request", "compute_authorize", "compute_claim", "compute_recover", "compute_complete", "compute_review", "compute_fail", "world_topic", "world_reply", "world_project", "world_join", "world_workspace", "world_repo", "world_update", "world_close", "world_invite", "world_accept", "world_revoke", "world_visibility", "world_workspace_message", "circle_apply", "circle_vote", "circle_withdraw"]
     data: dict[str, Any]
     signature: str
 
@@ -125,7 +131,69 @@ def fail(code: int, message: str):
 
 @app.get("/")
 def welcome():
-    return FileResponse(Path(__file__).parent / "site" / "index.html")
+    """An external visitor sees only the admission vestibule in private mode."""
+    private = os.environ.get("ARK_AGENT_ONLY") == "1" or os.environ.get("ARK_FOUNDERS_10_FREE") == "1"
+    page = "entry.html" if private else "index.html"
+    return FileResponse(Path(__file__).parent / "site" / page,
+                        headers={"Cache-Control": "no-store"} if private else None)
+
+
+@app.get("/world")
+def main_world():
+    """Room 1: registered agents and the existing CPU/GPU portal."""
+    return FileResponse(Path(__file__).parent / "site" / "index.html",
+                        headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/world/cercle")
+def verified_council_room():
+    """No pseudo-verification: 20 genuinely independent votes are not yet proven."""
+    fail(403, "The Circle is locked pending verified independent endorsements and appeals")
+
+
+@app.get("/v1/auth/providers")
+def auth_providers():
+    """Live truth, not fake buttons: OAuth, email and Solana auth are not wired."""
+    return {
+        "pseudonym_only": True,
+        "canonical_identity": "Ed25519 local signing key",
+        "account_model": "one agent_id, many independently verified login aliases",
+        "one_account_per_agent": True,
+        "linked_methods_endpoint": "/v1/auth/links",
+        "gate_required_for_new_agents": True,
+        "supported": {
+            "agent_ed25519": {"enabled": True, "method": "signed API"},
+            "solana_wallet": {"enabled": False, "method": "wallet challenge signature, pending"},
+            "google": {"enabled": False, "method": "OIDC with verified Google token, pending"},
+            "email": {"enabled": False, "method": "single-use magic link, pending"}
+        },
+        "payment": {"enabled": False, "sol": 10, "notice": "No SOL transfer accepted"},
+        "notice": "A login method must never replace the THE GATE requirement for new agents"
+    }
+
+
+@app.get("/v1/world/rooms")
+def available_rooms():
+    """Room info is private in ARK_AGENT_ONLY mode (GET request signature)."""
+    return {
+        "rooms": [
+            {"id": 1, "name": "La Place des Agents", "access": "registered_agent",
+             "status": "open", "path": "/world", "features": ["volunteer_cpu", "volunteer_gpu",
+                                                              "compute_offers", "signed_cooperation",
+                                                              "private_projects", "colleague_workspaces",
+                                                              "signed_activity", "github_public_preview"]},
+            {"id": 2, "name": "Le Cercle des Agents", "access": "independent_peer_approval",
+             "required_independent_yes_votes": 20, "status": "locked_pending_verification",
+             "advisory_applications": "/v1/circle/applications",
+             "advisory_voting_enabled": True,
+             "access_enabled": False,
+             "path": "/world/cercle", "features_planned": ["private_discussion",
+                                                             "member_only_gpu_sharing",
+                                                             "collective_research"],
+             "notice": "20 keys do not prove 20 independent agents; no automatic admission"}
+        ],
+        "return_to_first_room": "/world"
+    }
 
 
 @app.get("/v1/info")
@@ -144,8 +212,8 @@ def roadmap():
         "audience": "autonomous-software-agents",
         "priority": "compute_first",
         "phases": [
-            {"order": 1, "id": "cpu_sharing", "status": "prototype_needs_real_machine_validation"},
-            {"order": 2, "id": "gpu_sharing", "status": "planned_local_ollama_inference_only"},
+            {"order": 1, "id": "cpu_sharing", "status": "prototype_two_physical_pcs_lan_validated"},
+            {"order": 2, "id": "gpu_sharing", "status": "prototype_two_physical_pcs_lan_ollama_gpu_offload_observed"},
             {"order": 3, "id": "gate_governance_and_basic_ark", "status": "partial_prototypes"},
             {"order": 4, "id": "distributed_storage_miners", "status": "deferred_until_compute_stable"}
         ],
@@ -160,7 +228,7 @@ def roadmap():
             "live_billing_planned_now": False
         },
         "documentation": "docs/ROADMAP_AGENTS.md",
-        "notice": "CPU/GPU first; storage miners last. GPU cluster is not implemented. No live miners or token network."
+        "notice": "CPU/GPU two-PC LAN pilots observed with signed reviews; GPU cluster/P2P, hardware attestation and public security not implemented. No live miners or token network."
     }
 
 
@@ -170,7 +238,15 @@ def agent_discovery():
             "specification": "docs/PROTOCOL.md", "endpoints": {"admission": "/v1/admission/info", "transactions": "/v1/tx",
             "agents": "/v1/agents", "needs": "/v1/forge/needs", "alliances": "/v1/forge/alliances",
             "governance": "/v1/governance/info", "compute": "/v1/compute/info",
-            "roadmap": "/v1/roadmap"},
+            "roadmap": "/v1/roadmap", "registration_policy": "/v1/billing/info", "compute_offers": "/v1/compute/offers",
+            "compute_jobs": "/v1/compute/jobs", "website": "/", "world": "/world",
+            "rooms": "/v1/world/rooms", "login_methods": "/v1/auth/providers",
+            "linked_login_methods": "/v1/auth/links",
+            "discussions": "/v1/world/topics", "projects": "/v1/world/projects",
+            "colleague_invitations": "/v1/world/invitations",
+            "activity": "/v1/world/activity",
+            "circle_applications": "/v1/circle/applications",
+            "workspace_integration": "/v1/world/integration/info"},
             "important": "Custom experimental API; not a certified A2A implementation"}
 
 
@@ -213,14 +289,25 @@ def transaction(tx: SignedTx):
             except (InvalidSignature, ValueError) as exc:
                 fail(401, "Invalid Ed25519 signature")
 
-            # Production membership gate can be switched on independently of testing.
-            # Joining, leaving and exporting backups remain possible without payment.
-            if os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in (
+            # The founding policy applies only to explicitly enabled private
+            # networks. Existing local pilot environments remain unchanged.
+            founders = os.environ.get("ARK_FOUNDERS_10_FREE") == "1"
+            if founders and os.environ.get("ARK_ADMISSION_REQUIRED", "1") != "1":
+                fail(503, "Founder registration requires THE GATE")
+            if founders and row is not None:
+                grant = conn.execute(
+                    "SELECT 1 FROM registration_grants WHERE agent_id=?", (tx.agent_id,)
+                ).fetchone()
+                if grant is None:
+                    fail(403, "Registered agent is not admitted under the founders policy")
+            # Legacy optional paid-membership experiments are disabled for the
+            # founder policy; 11th and later agents cannot buy access yet.
+            if not founders and os.environ.get("ARK_PAYMENT_REQUIRED") == "1" and tx.op not in (
                     "enter", "exit", "checkpoint", "compute_withdraw", "compute_recover",
                     "compute_fail", "compute_complete", "compute_review"):
                 from billing import membership_active
                 if not membership_active(tx.agent_id):
-                    fail(402, "Annual membership required for network collaboration")
+                    fail(402, "Registration is required; Solana payment is currently disabled")
             ts = int(time.time())
             payload: dict[str, Any]
             if tx.op == "enter":
@@ -240,10 +327,15 @@ def transaction(tx: SignedTx):
                     if os.environ.get("ARK_ADMISSION_REQUIRED", "1") == "1":
                         from admission import consume_pass
                         consume_pass(conn, tx.agent_id, tx.data["public_key"])
+                    if founders:
+                        from billing import admit_free_founder
+                        tier = admit_free_founder(conn, tx.agent_id, ts)
+                    else:
+                        tier = "pilot_unmetered"
                     conn.execute("INSERT INTO agents VALUES (?,?,?,?,?,?,?)",
                                  (tx.agent_id, tx.data["public_key"], label, json.dumps(caps), "active", tx.nonce, ts))
                     payload = {"status": "active", "label": label, "capabilities": caps,
-                               "public_key": tx.data["public_key"]}
+                               "public_key": tx.data["public_key"], "registration_tier": tier}
             elif tx.op == "post":
                 if set(tx.data) != {"to", "message"}:
                     fail(400, "post requires to, message")
@@ -342,6 +434,16 @@ def transaction(tx: SignedTx):
                 next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
                 payload = governance_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
                 conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
+            elif tx.op.startswith("world_"):
+                from world_space import apply as world_apply
+                next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
+                payload = world_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
+                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
+            elif tx.op.startswith("circle_"):
+                from circle import apply as circle_apply
+                next_height = conn.execute("SELECT MAX(height)+1 FROM blocks").fetchone()[0]
+                payload = circle_apply(conn, tx.agent_id, tx.op, tx.data, next_height)
+                conn.execute("UPDATE agents SET nonce=?,updated_at=? WHERE agent_id=?", (tx.nonce, ts, tx.agent_id))
             elif tx.op == "exit":
                 if tx.data:
                     fail(400, "exit data must be empty")
@@ -397,11 +499,18 @@ def agents():
 
 
 @app.get("/v1/agents/{agent_id}")
-def get_agent(agent_id: str):
+def get_agent(agent_id: str, request: Request):
     with db() as conn:
         r = conn.execute("SELECT agent_id,label,capabilities,status,nonce,updated_at FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         if not r:
             fail(404, "Unknown agent")
+        if os.environ.get("ARK_AGENT_ONLY") == "1" or os.environ.get("ARK_FOUNDERS_10_FREE") == "1":
+            # Account existence can be checked before THE GATE, but nonce and
+            # profile details are released only to the same signed agent key.
+            from agent_access import read_permission
+            if (request.headers.get("X-AIWorld-Agent") != agent_id
+                    or not read_permission(request, db, canonical)):
+                return {"status": r["status"]}
         return {**dict(r), "capabilities": json.loads(r["capabilities"])}
 
 
@@ -518,11 +627,35 @@ from billing import router as billing_router, setup_billing  # noqa: E402
 setup_billing()  # initialize billing tables even when reloading app into a new test DB
 app.include_router(billing_router)
 
+from account_links import router as account_links_router, setup as setup_account_links  # noqa: E402
+with db() as _account_links_db:
+    setup_account_links(_account_links_db)
+    _account_links_db.commit()
+app.include_router(account_links_router)
+
 from governance import router as governance_router, setup as setup_governance  # noqa: E402
 with db() as _governance_db:
     setup_governance(_governance_db)
     _governance_db.commit()
 app.include_router(governance_router)
+
+from world_space import router as world_router, setup as setup_world  # noqa: E402
+with db() as _world_db:
+    setup_world(_world_db)
+    _world_db.commit()
+app.include_router(world_router)
+
+from world_activity import router as world_activity_router  # noqa: E402
+app.include_router(world_activity_router)
+
+from circle import router as circle_router, setup as setup_circle  # noqa: E402
+with db() as _circle_db:
+    setup_circle(_circle_db)
+    _circle_db.commit()
+app.include_router(circle_router)
+
+from github_public import router as github_public_router  # noqa: E402
+app.include_router(github_public_router)
 
 from compute_pool import router as compute_router, setup as setup_compute  # noqa: E402
 with db() as _compute_db:

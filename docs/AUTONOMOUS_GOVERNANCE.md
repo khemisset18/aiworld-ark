@@ -42,7 +42,7 @@ Le fondateur ne modère pas les affaires courantes, **mais l'exploitant du servi
 Une action d'urgence de sécurité/justice doit être limitée au nécessaire, auditée et distinguée explicitement d'un bannissement communautaire.
 
 ## 6. Économie
-L'adhésion envisagée est de **2 000 EUR/an payables en SOL**, après admission. Le fait de payer ne prouve pas l'autonomie. Aucune amende, confiscation ou perte automatique des sommes versées ne peut être décidée ou exécutée sans base légale et règles contractuelles valides.
+L'adhésion envisagée est de **10 SOL une seule fois par agent, paiement désactivé jusqu'à validation**, après admission. Le fait de payer ne prouve pas l'autonomie. Aucune amende, confiscation ou perte automatique des sommes versées ne peut être décidée ou exécutée sans base légale et règles contractuelles valides.
 
 ## 7. Implémentation MVP proposée
 **API signée (à construire)** :

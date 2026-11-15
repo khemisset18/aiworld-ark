@@ -45,7 +45,8 @@ def setup(conn: sqlite3.Connection):
     CREATE TABLE IF NOT EXISTS compute_capacity (
         height INTEGER PRIMARY KEY, owner TEXT NOT NULL, kinds TEXT NOT NULL,
         max_jobs INTEGER NOT NULL, expiry INTEGER NOT NULL,
-        models_json TEXT NOT NULL DEFAULT '[]', terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}', status TEXT NOT NULL DEFAULT 'open');
+        models_json TEXT NOT NULL DEFAULT '[]', terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}',
+        resources_json TEXT NOT NULL DEFAULT '{}', limits_json TEXT NOT NULL DEFAULT '{"max_wall_seconds":120,"max_memory_mb":512}', status TEXT NOT NULL DEFAULT 'open');
     CREATE TABLE IF NOT EXISTS compute_jobs (
         height INTEGER PRIMARY KEY, capacity_height INTEGER NOT NULL,
         requester TEXT NOT NULL, worker TEXT NOT NULL, kind TEXT NOT NULL,
@@ -60,11 +61,47 @@ def setup(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE compute_capacity ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]'")
     if "terms_json" not in columns:
         conn.execute("""ALTER TABLE compute_capacity ADD COLUMN terms_json TEXT NOT NULL DEFAULT '{"mode":"free","price_lamports":0}'""")
+    if "resources_json" not in columns:
+        conn.execute("ALTER TABLE compute_capacity ADD COLUMN resources_json TEXT NOT NULL DEFAULT '{}'")
+    if "limits_json" not in columns:
+        conn.execute("""ALTER TABLE compute_capacity ADD COLUMN limits_json TEXT NOT NULL DEFAULT '{"max_wall_seconds":120,"max_memory_mb":512}'""")
     job_columns = {r[1] for r in conn.execute("PRAGMA table_info(compute_jobs)")}
     if "lease_expires_at" not in job_columns:
         conn.execute("ALTER TABLE compute_jobs ADD COLUMN lease_expires_at INTEGER")
     if "attempts" not in job_columns:
         conn.execute("ALTER TABLE compute_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+
+
+DEFAULT_LIMITS = {"max_wall_seconds": 120, "max_memory_mb": 512}
+
+
+def validate_volunteer_limits(value):
+    if not isinstance(value, dict) or set(value) != {"max_wall_seconds", "max_memory_mb"}:
+        bad(400, "Invalid volunteer task limits")
+    wall, memory = value["max_wall_seconds"], value["max_memory_mb"]
+    if type(wall) is not int or not 5 <= wall <= 120:
+        bad(400, "Task wall time must be 5..120 seconds")
+    if type(memory) is not int or not 256 <= memory <= 4096:
+        bad(400, "Task memory bound must be 256..4096 MiB")
+    return value
+
+
+def validate_resources(value):
+    """Volunteer-signed advertised snapshot, not independently verified hardware."""
+    required = {"logical_cpu_cores", "memory_available_mb", "nvidia_gpu_count", "nvidia_vram_total_mb"}
+    if not isinstance(value, dict) or set(value) != required:
+        bad(400, "Invalid capacity resource inventory")
+    cpu, mem, gpu, vram = (value[k] for k in ("logical_cpu_cores", "memory_available_mb",
+                                             "nvidia_gpu_count", "nvidia_vram_total_mb"))
+    if type(cpu) is not int or not 1 <= cpu <= 1024:
+        bad(400, "Invalid CPU core count")
+    if mem is not None and (type(mem) is not int or not 1 <= mem <= 10000000):
+        bad(400, "Invalid available memory snapshot")
+    if type(gpu) is not int or not 0 <= gpu <= 16:
+        bad(400, "Invalid GPU count")
+    if type(vram) is not int or not 0 <= vram <= 1000000 or (gpu == 0 and vram != 0):
+        bad(400, "Invalid VRAM summary")
+    return value
 
 
 def model_name(value):
@@ -134,10 +171,14 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
     """Execute an operation inside the server's signed, serialized transaction."""
     now = int(time.time())
     if op == "compute_offer":
-        if not {"kinds", "max_jobs", "ttl_seconds"} <= set(data) or set(data) - {"kinds", "max_jobs", "ttl_seconds", "models", "terms"}:
+        if not {"kinds", "max_jobs", "ttl_seconds"} <= set(data) or set(data) - {"kinds", "max_jobs", "ttl_seconds", "models", "terms", "resources", "limits"}:
             bad(400, "Invalid capacity offer fields")
         terms = data.get("terms", {"mode": "free", "price_lamports": 0})
         price_breakdown(terms)  # validates terms
+        resource_snapshot = data.get("resources", {})
+        if resource_snapshot:
+            validate_resources(resource_snapshot)
+        volunteer_limits = validate_volunteer_limits(data.get("limits", DEFAULT_LIMITS))
         kinds, quota, ttl = data["kinds"], data["max_jobs"], data["ttl_seconds"]
         if not isinstance(kinds, list) or not kinds or len(kinds) > len(KINDS) or any(type(k) is not str or k not in KINDS for k in kinds) or len(set(kinds)) != len(kinds):
             bad(400, "Offer must list distinct supported job kinds")
@@ -150,10 +191,12 @@ def apply(conn: sqlite3.Connection, actor: str, op: str, data: dict, height: int
             bad(400, "max_jobs must be 1..25")
         if type(ttl) is not int or not 60 <= ttl <= 86400:
             bad(400, "ttl_seconds must be 60..86400")
-        conn.execute("INSERT INTO compute_capacity (height,owner,kinds,max_jobs,expiry,models_json,terms_json,status) VALUES (?,?,?,?,?,?,?,?)",
-                     (height, actor, json.dumps(kinds), quota, now + ttl, json.dumps(models), json.dumps(terms), "open"))
+        conn.execute("INSERT INTO compute_capacity (height,owner,kinds,max_jobs,expiry,models_json,terms_json,resources_json,limits_json,status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                     (height, actor, json.dumps(kinds), quota, now + ttl, json.dumps(models), json.dumps(terms),
+                      json.dumps(resource_snapshot), json.dumps(volunteer_limits), "open"))
         return {"capacity_height": height, "kinds": kinds, "models": models, "max_jobs": quota,
-                "expires_at": now + ttl, "terms": price_breakdown(terms), "status": "open"}
+                "expires_at": now + ttl, "terms": price_breakdown(terms), "status": "open",
+                "resources": resource_snapshot, "limits": volunteer_limits}
     if op == "compute_withdraw":
         exact(data, {"capacity_height"})
         offer = row(conn, "compute_capacity", data["capacity_height"])
@@ -285,6 +328,8 @@ def info():
             "worker_consent": "explicit signed offer and separate signed claim per job",
             "trust": "result is unverified until requester attests; identities are not Sybil-resistant",
             "inference": "optional local Ollama; no tool execution; no secrets in prompts",
+            "hardware": "volunteer-declared CPU/GPU snapshot, not remotely attested",
+            "execution_limits": "volunteer subprocess wall-time and memory; separate Ollama not fully limited",
             "paid_exchange": "quotes only; paid execution disabled pending audited Solana settlement verifier"}
 
 
@@ -302,7 +347,13 @@ def offers(status: str = "available", limit: int = Query(50, ge=1, le=100)):
             count = conn.execute("SELECT COUNT(*) FROM compute_jobs WHERE capacity_height=?", (r["height"],)).fetchone()[0]
             if status == "available" and count >= r["max_jobs"]:
                 continue
-            result.append({**dict(r), "kinds": json.loads(r["kinds"]), "models": json.loads(r["models_json"]), "terms": price_breakdown(json.loads(r["terms_json"])), "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
+            result.append({**dict(r), "kinds": json.loads(r["kinds"]),
+                           "models": json.loads(r["models_json"]),
+                           "resources": json.loads(r["resources_json"]),
+                           "limits": json.loads(r["limits_json"]),
+                           "hardware_unverified": True,
+                           "terms": price_breakdown(json.loads(r["terms_json"])),
+                           "used_jobs": count, "remaining_jobs": max(0,r["max_jobs"]-count)})
         return result
 
 
@@ -376,7 +427,12 @@ def assigned_jobs(agent_id: str, timestamp: int, signature: str,
         query = ("SELECT * FROM compute_jobs WHERE capacity_height=? AND worker=?" +
                  ("" if status == "all" else " AND status=?") + " ORDER BY height LIMIT ?")
         params = (capacity_height, agent_id, limit) if status == "all" else (capacity_height, agent_id, status, limit)
-        return [_present(j) for j in conn.execute(query, params).fetchall()]
+        result = []
+        for task in conn.execute(query, params).fetchall():
+            item = _present(task)
+            item["limits"] = json.loads(offer["limits_json"])
+            result.append(item)
+        return result
 
 
 @router.get("/jobs/{height}/private")

@@ -1,4 +1,6 @@
-# Experimental single-server HTTPS pilot. See docs/COMPUTE_PILOT.md.
+# Private agents-only HTTPS trial with first-ten-free admissions. NOT audited public production.
+# Use a fresh SQLite volume; old pilot identities have no founding registration grants.
+# See docs/AGENT_ONLY_FIRST_TEN_2026-11-15.md.
 services:
   api:
     build: .
@@ -6,6 +8,8 @@ services:
     environment:
       SOULCHAIN_DB: /data/soulchain.sqlite3
       ARK_ADMISSION_REQUIRED: "1"
+      ARK_AGENT_ONLY: "1"
+      ARK_FOUNDERS_10_FREE: "1"
       ARK_PAYMENT_REQUIRED: "0"
       ARK_BILLING_ENABLED: "0"
     volumes:

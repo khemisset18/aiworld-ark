@@ -1,0 +1,3 @@
+# Standalone staging frontend only. Never load full coordinator requirements here.
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
