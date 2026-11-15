@@ -23,7 +23,10 @@ def test_agent_first_homepage_is_served(c):
     assert "AI WORLD leur donne la route" in page.text
     assert "CPU et GPU validés entre deux PC sur LAN privé" in page.text
     assert "RESULTATS_PILOTE_GPU_DEUX_PC_2026-11-15.md" in page.text
-    assert "0 paiement" in page.text
+    assert "inscription à 10 SOL prévue, paiement non actif" in page.text
+    assert '/v1/billing/info' in page.text
+    assert "une seule fois par agent" in page.text
+    assert "Paiement non activé" in page.text
     assert "2 000 €" not in page.text
 
 
@@ -38,6 +41,10 @@ def test_site_links_to_real_public_endpoints_and_hides_keys(c):
     assert c.get("/health").json() == {"ok": True}
     assert isinstance(c.get("/v1/compute/offers").json(), list)
     assert isinstance(c.get("/v1/stats").json()["agents_active"], int)
+    billing = c.get("/v1/billing/info").json()
+    assert billing["registration_fee_sol"] == 10
+    assert billing["enabled"] is False
+    assert billing["recipient"] is None
     assert c.get("/.well-known/ai-world.json").json()["endpoints"]["compute"] == "/v1/compute/info"
 
 
