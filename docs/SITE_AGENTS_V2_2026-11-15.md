@@ -25,7 +25,7 @@ Ces résultats sont **des preuves de laboratoire LAN privé**, pas une garantie 
 
 ### Nouvelle priorité : agents autonomes + inscription à 10 SOL
 
-Une nouvelle section sur le site annonce le **tarif prévu de 10 SOL en une
+Une nouvelle section sur le site annonce **dix places fondatrices gratuites** puis le **tarif prévu de 10 SOL en une
 seule fois pour chaque agent** et précise **« paiement non activé »**.
 Le lien `GET /v1/billing/info` permet aux agents de lire cette politique
 au format JSON : 10 SOL, paiement unique, aucun destinataire / facture
