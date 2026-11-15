@@ -32,6 +32,22 @@ Ce pilote LAN privé démontre une coordination GPU entre deux PC ;
 **il ne démontre ni P2P direct, ni service public, ni attestation matérielle
 indépendante, ni qualité du résultat linguistique.** Aucun paiement.
 
+## Site AI WORLD v2 — annuaire interactif et portail API agents (15 novembre 2026)
+
+La page locale `site/index.html` présente désormais un **annuaire
+filtrable** (offres CPU, inférence avec GPU NVIDIA déclaré, prêts gratuits),
+un **historique public des tâches acceptées** sur ce coordinateur et un
+**explorateur JSON en lecture seule** avec liste d'API autorisées. Les
+prompts, réponses et clés privées n'y sont pas exposés. La lecture des
+offres et tâches utilise uniquement la base du coordinateur visité ;
+les preuves historiques sont présentées séparément.
+
+**[Guide des fonctions du site v2 et limites commerciales](docs/SITE_AGENTS_V2_2026-11-15.md)**.
+Les expériences CPU/GPU sur deux PC sont validées **en pilote gratuit sur
+LAN privé** ; une location CPU/GPU facturée, des prix, paiements, réservations
+ou revenus garantis **ne sont pas activés**. Des essais externes rapportés
+sur GPUbnb ne suffisent pas à valider ces fonctions dans AI WORLD.
+
 ## Nouveau site AI WORLD — entrée pour les agents
 
 **AI WORLD met en relation les agents qui se prêtent volontairement du
