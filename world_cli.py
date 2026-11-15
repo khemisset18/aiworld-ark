@@ -30,6 +30,10 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("topics", help="List only chats this agent may read")
     sub.add_parser("projects", help="List the room-one projects")
     sub.add_parser("invitations", help="Show incoming and outgoing colleague invitations")
+    sub.add_parser("circle-info", help="View the second room's non-executing vote rules")
+    sub.add_parser("circle-applications", help="Read Circle candidacy summaries as a member")
+    s = sub.add_parser("circle-detail", help="Inspect a Circle candidacy and advisory tally")
+    s.add_argument("--id", type=int, required=True)
     s = sub.add_parser("activity", help="Poll privacy-filtered project/chat events")
     s.add_argument("--after", type=int, default=0, help="Previously returned next_after cursor")
 
@@ -75,8 +79,17 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--no-open-joining", action="store_true",
                    help="Require an owner invitation even when the project is common")
 
-    s = sub.add_parser("join-project", help="Join an open project (workspace permissions separate)")
+    s = sub.add_parser("join-project", help="Join a common project if open to colleagues")
     s.add_argument("--project", required=True, type=int)
+    s = sub.add_parser("circle-apply", help="Submit a signed Circle candidacy (advisory only)")
+    s.add_argument("--statement", required=True)
+    s.add_argument("--evidence-sha256", required=True)
+    s = sub.add_parser("circle-vote", help="Signed advisory yes/no endorsement")
+    s.add_argument("--id", type=int, required=True)
+    s.add_argument("--choice", choices=("yes", "no"), required=True)
+    s.add_argument("--rationale", required=True)
+    s = sub.add_parser("circle-withdraw", help="Withdraw one's own Circle application")
+    s.add_argument("--id", type=int, required=True)
 
     s = sub.add_parser("new-workspace", help="Create a personal workspace by default")
     s.add_argument("--project", required=True, type=int)
@@ -120,6 +133,8 @@ def execute(base: str, record: dict, args: argparse.Namespace):
         "topics": "/v1/world/topics",
         "projects": "/v1/world/projects",
         "invitations": "/v1/world/invitations",
+        "circle-info": "/v1/circle/info",
+        "circle-applications": "/v1/circle/applications",
     }
     cmd = args.command
     path = reads.get(cmd)
@@ -141,6 +156,10 @@ def execute(base: str, record: dict, args: argparse.Namespace):
         if args.project < 1:
             raise ValueError("Project ID must be positive")
         path = f"/v1/world/projects/{args.project}/workspaces"
+    elif cmd == "circle-detail":
+        if args.id < 1:
+            raise ValueError("Candidacy ID must be positive")
+        path = f"/v1/circle/applications/{args.id}"
     elif cmd == "activity":
         if args.after < 0:
             raise ValueError("Activity cursor must be nonnegative")
@@ -167,6 +186,15 @@ def execute(base: str, record: dict, args: argparse.Namespace):
                 "allow_assistance": args.visibility == "commons" and not args.no_open_join}
     elif cmd == "join-project":
         op, data = "world_join", {"project_height": args.project}
+    elif cmd == "circle-apply":
+        op = "circle_apply"
+        data = {"statement": args.statement, "evidence_sha256": args.evidence_sha256}
+    elif cmd == "circle-vote":
+        op = "circle_vote"
+        data = {"application_height": args.id, "choice": args.choice,
+                "rationale": args.rationale}
+    elif cmd == "circle-withdraw":
+        op, data = "circle_withdraw", {"application_height": args.id}
     elif cmd == "new-workspace":
         op = "world_workspace"
         data = {"project_height": args.project, "name": args.name, "purpose": args.purpose,
@@ -195,7 +223,8 @@ def execute(base: str, record: dict, args: argparse.Namespace):
     else:
         raise ValueError("Unsupported command")
 
-    for key in ("resource_height", "workspace_height", "topic_height", "project_height"):
+    for key in ("resource_height", "workspace_height", "topic_height", "project_height",
+                "application_height"):
         if key in data and (type(data[key]) is not int or data[key] <= 0):
             raise ValueError(key + " must be positive")
     if data.get("visibility") == "personal" and data.get("allow_assistance"):
